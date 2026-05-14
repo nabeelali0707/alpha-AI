@@ -1,0 +1,71 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User profile
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  username  String?
+  avatarUrl String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  holdings   Holding[]
+  watchlist  Watchlist[]
+  signals    TradingSignal[]
+}
+
+// Portfolio holdings
+model Holding {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  symbol    String
+  quantity  Decimal
+  entryPrice Decimal
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([userId, symbol])
+  @@index([userId])
+}
+
+// Watchlist
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  symbol    String
+  addedAt   DateTime @default(now())
+  
+  @@unique([userId, symbol])
+  @@index([userId])
+}
+
+// Trading signals
+model TradingSignal {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  symbol    String
+  signal    String   // BUY, SELL, HOLD
+  confidence Int?
+  priceTarget Decimal?
+  
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([symbol])
+}
