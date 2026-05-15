@@ -186,3 +186,80 @@ class StockService:
                 "description": None,
                 "website": None
             }
+
+    @staticmethod
+    def get_financials(ticker: str) -> Dict[str, Any]:
+        """
+        Fetches the company's financial statements:
+        income statement, balance sheet, and cash flow.
+        """
+        try:
+            try:
+                import yfinance as yf
+            except Exception:
+                raise HTTPException(status_code=404, detail="yfinance is not available in the current runtime")
+
+            stock = yf.Ticker(ticker)
+
+            def _df_to_dict(df: pd.DataFrame) -> Dict[str, Any]:
+                """Convert a financials DataFrame to a JSON-safe dict."""
+                if df is None or df.empty:
+                    return {}
+                # Columns are dates; rows are line items
+                result = {}
+                for col in df.columns:
+                    key = col.strftime("%Y-%m-%d") if hasattr(col, "strftime") else str(col)
+                    result[key] = {
+                        str(idx): (None if pd.isna(val) else float(val))
+                        for idx, val in df[col].items()
+                    }
+                return result
+
+            return {
+                "symbol": ticker.upper(),
+                "income_statement": _df_to_dict(stock.financials),
+                "balance_sheet": _df_to_dict(stock.balance_sheet),
+                "cash_flow": _df_to_dict(stock.cashflow),
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Error fetching financials for {ticker}: {str(e)}",
+            )
+
+    @staticmethod
+    def get_corporate_actions(ticker: str) -> Dict[str, Any]:
+        """
+        Fetches historical dividends and stock splits.
+        """
+        try:
+            try:
+                import yfinance as yf
+            except Exception:
+                raise HTTPException(status_code=404, detail="yfinance is not available in the current runtime")
+
+            stock = yf.Ticker(ticker)
+
+            def _series_to_dict(series: pd.Series) -> Dict[str, Any]:
+                """Convert a pandas Series with DatetimeIndex to a JSON-safe dict."""
+                if series is None or series.empty:
+                    return {}
+                return {
+                    idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx): float(val)
+                    for idx, val in series.items()
+                }
+
+            return {
+                "symbol": ticker.upper(),
+                "dividends": _series_to_dict(stock.dividends),
+                "splits": _series_to_dict(stock.splits),
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Error fetching corporate actions for {ticker}: {str(e)}",
+            )

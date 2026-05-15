@@ -59,3 +59,39 @@ async def get_stock_history(
 ):
     """Fetch historical OHLCV price data."""
     return stock_service.get_stock_history(symbol, period=period, interval=interval)
+
+
+@router.get(
+    "/{symbol}/financials",
+    summary="Get financial statements",
+    description=(
+        "Fetch the company's core financial statements — income statement, "
+        "balance sheet, and cash flow — sourced from yfinance. "
+        "Each statement is keyed by reporting date with line-item breakdowns."
+    ),
+    responses={
+        200: {"description": "Successfully retrieved financial statements"},
+        404: {"description": "Ticker not found or no financial data available"},
+    },
+)
+async def get_stock_financials(symbol: str):
+    """Fetch income statement, balance sheet, and cash flow data."""
+    return stock_service.get_financials(symbol)
+
+
+@router.get(
+    "/{symbol}/actions",
+    summary="Get corporate actions",
+    description=(
+        "Fetch historical dividends and stock splits for a given ticker. "
+        "Dates are returned as string keys in YYYY-MM-DD format."
+    ),
+    responses={
+        200: {"description": "Successfully retrieved corporate actions"},
+        404: {"description": "Ticker not found or no corporate actions available"},
+    },
+)
+async def get_stock_actions(symbol: str):
+    """Fetch historical dividends and stock splits."""
+    return stock_service.get_corporate_actions(symbol)
+

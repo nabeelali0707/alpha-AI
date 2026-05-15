@@ -184,7 +184,7 @@ class RecommenderService:
         Sorted by confidence descending.
         """
         if tickers is None:
-            tickers = ["NVDA", "AAPL", "MSFT", "TSLA", "AMD"]
+            tickers = ["NVDA", "AAPL", "MSFT", "TSLA", "AMD", "META", "GOOGL", "AMZN", "PLTR"]
 
         recommendations = []
         for ticker in tickers:
