@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import Link from "next/link";
+import { AuthProvider } from "../context/AuthProvider";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -38,7 +39,7 @@ export default function RootLayout({
           <Link href="/auth/login" className="btn btn-primary" style={{ padding: '8px 16px' }}>Terminal Login</Link>
         </header>
         <main style={{ flex: 1 }}>
-          {children}
+          <AuthProvider>{children}</AuthProvider>
         </main>
         <footer style={{ padding: 'var(--spacing-xl) 0', textAlign: 'center', opacity: 0.5, fontSize: '14px' }}>
           <p>&copy; 2026 AlphaAI Neural Systems. All rights reserved.</p>

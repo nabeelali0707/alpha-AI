@@ -1,16 +1,17 @@
-import torch
+import torch 
 from transformers import pipeline
 from typing import Dict, List, Any
 from fastapi import HTTPException
 
+from utils.config import settings
+
 class SentimentService:
     def __init__(self):
-        # Initialize the sentiment pipeline with a financial model if possible
-        # For now, using a general-purpose robust model
+        # Initialize the sentiment pipeline with the model from settings
         try:
-            self.analyzer = pipeline("sentiment-analysis", model="ProsusAI/finbert")
+            self.analyzer = pipeline("sentiment-analysis", model=settings.SENTIMENT_MODEL)
         except Exception:
-            # Fallback to a standard model if finbert isn't available
+            # Fallback to a standard model if specified model isn't available
             self.analyzer = pipeline("sentiment-analysis")
 
     async def analyze(self, symbol: str) -> Dict[str, Any]:

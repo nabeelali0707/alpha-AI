@@ -1,18 +1,18 @@
 # FastAPI Core
 fastapi==0.111.0
 uvicorn==0.30.1
-pydantic==2.7.4
+pydantic==2.13.4
 pydantic-settings==2.3.3
 
 # Data Analysis & Finance
 yfinance==0.2.40
-pandas==2.2.2
-numpy==1.26.4
-scikit-learn==1.5.0
+pandas==3.0.1
+numpy==2.4.3
+scikit-learn==1.7.2
 
 # AI & Machine Learning
-transformers==4.41.2
-torch==2.3.1
+transformers==5.8.1
+torch==2.12.0
 
 # Web Scraping & APIs
 requests==2.32.3
