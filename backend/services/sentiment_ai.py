@@ -1,48 +1,187 @@
-import torch
-from transformers import pipeline
+"""
+AI Sentiment Analysis Service — Step 5 (Rewritten)
+Uses HuggingFace FinBERT to analyze financial news headlines.
+Now exposes a reusable analyze_sentiment(text) function and integrates
+with the news service for real data.
+"""
+
+import logging
 from typing import Dict, List, Any
+
+# pyrefly: ignore [missing-import]
 from fastapi import HTTPException
 
-class SentimentService:
-    def __init__(self):
-        # Initialize the sentiment pipeline with a financial model if possible
-        # For now, using a general-purpose robust model
+logger = logging.getLogger(__name__)
+
+# ── Lazy-loaded singleton pipeline ──────────────────────────────────────────
+_pipeline = None
+
+
+def _get_pipeline():
+    """Lazy-load the FinBERT pipeline once to save memory on import."""
+    global _pipeline
+    if _pipeline is None:
         try:
-            self.analyzer = pipeline("sentiment-analysis", model="ProsusAI/finbert")
-        except Exception:
-            # Fallback to a standard model if finbert isn't available
-            self.analyzer = pipeline("sentiment-analysis")
+            from transformers import pipeline as hf_pipeline
+            logger.info("Loading FinBERT model — this may take a moment on first run…")
+            _pipeline = hf_pipeline(
+                "sentiment-analysis",
+                model="ProsusAI/finbert",
+                top_k=None,           # return all labels with scores
+                truncation=True,
+            )
+            logger.info("FinBERT model loaded successfully.")
+        except Exception as e:
+            logger.error(f"Failed to load FinBERT: {e}. Falling back to default model.")
+            from transformers import pipeline as hf_pipeline
+            _pipeline = hf_pipeline("sentiment-analysis", truncation=True)
+    return _pipeline
+
+
+# ── Core reusable function ──────────────────────────────────────────────────
+
+def analyze_sentiment(text: str) -> Dict[str, Any]:
+    """
+    Analyze the sentiment of a single piece of text using FinBERT.
+
+    Args:
+        text: The financial text/headline to analyze.
+
+    Returns:
+        Dict with keys: label (positive/negative/neutral), score, all_scores
+    """
+    if not text or not text.strip():
+        return {"label": "neutral", "score": 0.0, "all_scores": {}}
+
+    pipe = _get_pipeline()
+    results = pipe(text[:512])  # FinBERT max 512 tokens
+
+    # results is [[{label, score}, …]] when top_k=None
+    if isinstance(results[0], list):
+        scores_list = results[0]
+    else:
+        scores_list = results
+
+    all_scores = {item["label"].lower(): round(float(item["score"]), 4) for item in scores_list}
+
+    # Pick the label with the highest score
+    best = max(scores_list, key=lambda x: x["score"])
+    return {
+        "label": best["label"].lower(),
+        "score": round(float(best["score"]), 4),
+        "all_scores": all_scores,
+    }
+
+
+# ── Service class (used by routes) ──────────────────────────────────────────
+
+class SentimentService:
+    """
+    High-level service that fetches real news via NewsService,
+    then runs FinBERT sentiment on each headline.
+    """
+
+    def __init__(self):
+        from services.news_service import NewsService
+        self.news_service = NewsService()
 
     async def analyze(self, symbol: str) -> Dict[str, Any]:
         """
-        Analyzes market sentiment for a specific ticker using AI.
-        In a real scenario, this would scrape news/social media for the symbol.
+        Full sentiment analysis pipeline for a stock ticker:
+        1. Fetch news headlines
+        2. Analyze each headline with FinBERT
+        3. Aggregate overall sentiment
         """
         try:
-            # Simulated text based on current market context (in reality, you'd fetch news)
-            sample_texts = [
-                f"{symbol} reported stronger than expected earnings this morning.",
-                f"Analysts are raising price targets for {symbol} following recent breakthroughs.",
-                f"Global supply chain issues might impact {symbol}'s performance in Q3."
-            ]
-            
-            results = self.analyzer(sample_texts)
-            
-            # Aggregate results
-            scores = [res['score'] if res['label'] == 'positive' else -res['score'] for res in results]
-            avg_score = sum(scores) / len(scores)
-            
-            label = "BULLISH" if avg_score > 0.2 else "BEARISH" if avg_score < -0.2 else "NEUTRAL"
-            
+            articles = self.news_service.get_stock_news(symbol)
+
+            headline_results: List[Dict[str, Any]] = []
+            positive_count = 0
+            negative_count = 0
+            neutral_count = 0
+            total_score = 0.0
+
+            for article in articles:
+                headline = article.get("headline", "")
+                if not headline:
+                    continue
+
+                result = analyze_sentiment(headline)
+
+                mapped_label = result["label"]
+                if mapped_label == "positive":
+                    positive_count += 1
+                    total_score += result["score"]
+                elif mapped_label == "negative":
+                    negative_count += 1
+                    total_score -= result["score"]
+                else:
+                    neutral_count += 1
+
+                headline_results.append({
+                    "headline": headline,
+                    "source": article.get("source", "Unknown"),
+                    "url": article.get("url", ""),
+                    "published_date": article.get("published_date", ""),
+                    "sentiment": {
+                        "label": mapped_label,
+                        "confidence": result["score"],
+                        "all_scores": result["all_scores"],
+                    },
+                })
+
+            total = positive_count + negative_count + neutral_count
+            if total == 0:
+                avg_score = 0.0
+                overall_label = "NEUTRAL"
+            else:
+                avg_score = total_score / total
+                if avg_score > 0.15:
+                    overall_label = "BULLISH"
+                elif avg_score < -0.15:
+                    overall_label = "BEARISH"
+                else:
+                    overall_label = "NEUTRAL"
+
             return {
                 "symbol": symbol.upper(),
-                "score": round(float(avg_score), 2),
-                "label": label,
-                "indicators": [
-                    "Strong earnings performance",
-                    "Positive analyst sentiment",
-                    "Potential supply chain headwinds"
-                ]
+                "score": round(avg_score, 4),
+                "label": overall_label,
+                "total_articles": total,
+                "breakdown": {
+                    "positive": positive_count,
+                    "negative": negative_count,
+                    "neutral": neutral_count,
+                },
+                "headlines": headline_results,
+                "indicators": _build_indicators(overall_label, positive_count, negative_count, neutral_count),
             }
+        except HTTPException:
+            raise
         except Exception as e:
+            logger.error(f"Sentiment analysis failed for {symbol}: {e}")
             raise HTTPException(status_code=500, detail=f"Sentiment analysis failed: {str(e)}")
+
+
+def _build_indicators(label: str, pos: int, neg: int, neu: int) -> List[str]:
+    """Build human-readable indicator strings from sentiment counts."""
+    indicators = []
+    total = pos + neg + neu
+    if total == 0:
+        return ["No news data available"]
+
+    if pos > neg:
+        indicators.append(f"Majority positive sentiment ({pos}/{total} headlines)")
+    elif neg > pos:
+        indicators.append(f"Majority negative sentiment ({neg}/{total} headlines)")
+    else:
+        indicators.append(f"Mixed sentiment ({pos} pos / {neg} neg / {neu} neutral)")
+
+    if label == "BULLISH":
+        indicators.append("Overall market outlook is bullish")
+    elif label == "BEARISH":
+        indicators.append("Overall market outlook is bearish")
+    else:
+        indicators.append("Market outlook is neutral — no strong directional bias")
+
+    return indicators
