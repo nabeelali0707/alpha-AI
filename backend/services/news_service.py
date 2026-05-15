@@ -3,10 +3,10 @@ News Fetching Service — Step 6
 Fetches real-time financial news for a given stock ticker using NewsAPI.
 """
 
-import os
 import logging
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+from functools import lru_cache
+from typing import Any, Dict, List
 
 import requests
 from fastapi import HTTPException
@@ -14,6 +14,48 @@ from fastapi import HTTPException
 from utils.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=128)
+def _cached_stock_news(ticker: str, max_articles: int, days_back: int, api_key: str) -> List[Dict[str, Any]]:
+    """Cached NewsAPI fetch to reduce repeated external calls for the same ticker."""
+    if not api_key or api_key == "your_newsapi_key_here":
+        return NewsService._fallback_headlines(ticker)
+
+    from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    to_date = datetime.utcnow().strftime("%Y-%m-%d")
+
+    params = {
+        "q": f"{ticker} stock",
+        "from": from_date,
+        "to": to_date,
+        "language": "en",
+        "sortBy": "relevancy",
+        "pageSize": max_articles,
+        "apiKey": api_key,
+    }
+
+    response = requests.get(NewsService.BASE_URL, params=params, timeout=10)
+
+    if response.status_code == 401:
+        raise HTTPException(status_code=401, detail="NewsAPI key is invalid.")
+    if response.status_code == 429:
+        return NewsService._fallback_headlines(ticker)
+
+    response.raise_for_status()
+    data = response.json()
+
+    articles = []
+    for article in data.get("articles", []):
+        articles.append({
+            "headline": article.get("title", ""),
+            "source": article.get("source", {}).get("name", "Unknown"),
+            "url": article.get("url", ""),
+            "published_date": article.get("publishedAt", ""),
+            "description": article.get("description", ""),
+        })
+
+    return articles or NewsService._fallback_headlines(ticker)
 
 
 class NewsService:
@@ -41,51 +83,8 @@ class NewsService:
         Returns:
             List of article dicts with headline, source, url, published_date.
         """
-        if not self.api_key or self.api_key == "your_newsapi_key_here":
-            logger.warning("NewsAPI key not configured — returning fallback headlines.")
-            return self._fallback_headlines(ticker)
-
         try:
-            from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-            to_date = datetime.utcnow().strftime("%Y-%m-%d")
-
-            params = {
-                "q": f"{ticker} stock",
-                "from": from_date,
-                "to": to_date,
-                "language": "en",
-                "sortBy": "relevancy",
-                "pageSize": max_articles,
-                "apiKey": self.api_key,
-            }
-
-            response = requests.get(self.BASE_URL, params=params, timeout=10)
-
-            if response.status_code == 401:
-                logger.error("NewsAPI authentication failed — invalid API key.")
-                raise HTTPException(status_code=401, detail="NewsAPI key is invalid.")
-            if response.status_code == 429:
-                logger.warning("NewsAPI rate limit hit — falling back to sample headlines.")
-                return self._fallback_headlines(ticker)
-
-            response.raise_for_status()
-            data = response.json()
-
-            articles = []
-            for article in data.get("articles", []):
-                articles.append({
-                    "headline": article.get("title", ""),
-                    "source": article.get("source", {}).get("name", "Unknown"),
-                    "url": article.get("url", ""),
-                    "published_date": article.get("publishedAt", ""),
-                    "description": article.get("description", ""),
-                })
-
-            if not articles:
-                logger.info(f"No news found for {ticker}, returning fallback headlines.")
-                return self._fallback_headlines(ticker)
-
-            return articles
+            return _cached_stock_news(ticker.upper(), max_articles, days_back, self.api_key)
 
         except HTTPException:
             raise

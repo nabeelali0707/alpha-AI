@@ -1,13 +1,16 @@
 """
 Analysis & Sentiment Routes — Steps 7, 9, 11 (Enhanced)
 Endpoints:
-  GET /sentiment/{symbol}   — AI sentiment analysis
-  GET /recommend/{symbol}   — AI recommendation for a specific ticker
-  GET /recommendations      — Top AI recommendations (multiple tickers)
-  GET /dashboard/{symbol}   — Combined dashboard summary
-  GET /technical/{symbol}   — Technical indicators
-  GET /news/{symbol}        — Latest news articles
+    GET /sentiment/{symbol}   — AI sentiment analysis
+    GET /recommend/{symbol}   — AI recommendation for a specific ticker
+    GET /recommendations      — Top AI recommendations (multiple tickers)
+    GET /dashboard/{symbol}   — Combined dashboard summary
+    GET /technical/{symbol}   — Technical indicators
+    GET /news/{symbol}        — Latest news articles
 """
+
+import asyncio
+import logging
 
 from fastapi import APIRouter
 
@@ -31,6 +34,8 @@ recommender_service = RecommenderService()
 technical_service = TechnicalService()
 news_service = NewsService()
 stock_service = StockService()
+
+logger = logging.getLogger("alphaai.routes.analysis")
 
 
 # ── Sentiment ───────────────────────────────────────────────────────────────
@@ -146,17 +151,47 @@ async def get_dashboard(symbol: str):
     Assemble a complete dashboard view for a single ticker.
     Combines all available data into one frontend-ready response.
     """
-    import asyncio
+    try:
+        price = await asyncio.to_thread(stock_service.get_stock_price, symbol)
+    except Exception as exc:
+        logger.warning("Price fetch failed for %s: %s", symbol, exc)
+        price = None
 
-    # Fetch independent data concurrently
-    price = stock_service.get_stock_price(symbol)
-    history = stock_service.get_stock_history(symbol, period="1mo")
-    metadata = stock_service.get_stock_info(symbol)
-    technicals = technical_service.get_all_indicators(symbol)
+    try:
+        history = await asyncio.to_thread(stock_service.get_stock_history, symbol, "1mo")
+    except Exception as exc:
+        logger.warning("History fetch failed for %s: %s", symbol, exc)
+        history = []
 
-    # Async data
-    sentiment = await sentiment_service.analyze(symbol)
-    recommendation = await recommender_service.generate_recommendation(symbol)
+    try:
+        metadata = await asyncio.to_thread(stock_service.get_stock_info, symbol)
+    except Exception as exc:
+        logger.warning("Metadata fetch failed for %s: %s", symbol, exc)
+        metadata = None
+
+    try:
+        technicals = await asyncio.to_thread(technical_service.get_all_indicators, symbol)
+    except Exception as exc:
+        logger.warning("Technical indicators failed for %s: %s", symbol, exc)
+        technicals = None
+
+    # Continue with sentiment and recommendation; these may also fail — handle with try/except
+    try:
+        sentiment = await sentiment_service.analyze(symbol)
+    except Exception:
+        sentiment = None
+
+    try:
+        if price is not None and technicals is not None:
+            recommendation = await recommender_service.generate_recommendation(
+                price,
+                sentiment_data=sentiment,
+                technical_indicators=technicals,
+            )
+        else:
+            recommendation = None
+    except Exception:
+        recommendation = None
 
     return {
         "symbol": symbol.upper(),

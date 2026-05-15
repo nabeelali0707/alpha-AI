@@ -3,10 +3,10 @@ Application Configuration — Step 12 (Enhanced)
 Loads and validates environment variables from .env using Pydantic Settings.
 """
 
-import os
 from typing import List
-from pydantic_settings import BaseSettings
-from pydantic import Field
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # ── API Keys ────────────────────────────────────────────────────────
     newsapi_key: str = Field(
-        default="your_newsapi_key_here",
+        default="",
         description="NewsAPI.org API key (get one at https://newsapi.org)",
     )
 
@@ -48,10 +48,27 @@ class Settings(BaseSettings):
         description="HuggingFace model ID for sentiment analysis",
     )
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, value: int) -> int:
+        if value < 1 or value > 65535:
+            raise ValueError("port must be between 1 and 65535")
+        return value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, value: str) -> str:
+        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if not origins:
+            raise ValueError("cors_origins must include at least one origin")
+        return value
 
 
 # Singleton instance

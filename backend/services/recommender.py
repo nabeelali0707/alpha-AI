@@ -8,7 +8,7 @@ Generates BUY / SELL / HOLD recommendations using real algorithmic logic:
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from fastapi import HTTPException
 
@@ -29,7 +29,9 @@ class RecommenderService:
 
     async def generate_recommendation(
         self,
-        ticker: str,
+        stock_data: Dict[str, Any] | str,
+        sentiment_data: Dict[str, Any] | None = None,
+        technical_indicators: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """
         Generate a BUY/SELL/HOLD recommendation for a single ticker by
@@ -43,17 +45,25 @@ class RecommenderService:
             - Volatility:       10 points
         """
         try:
+            if isinstance(stock_data, str):
+                ticker = stock_data.upper()
+                price_data = self.stock_service.get_stock_price(ticker)
+            else:
+                ticker = str(stock_data.get("symbol") or stock_data.get("ticker") or "").upper()
+                if not ticker:
+                    raise ValueError("stock_data must include a symbol or ticker")
+                price_data = stock_data
+
             # ── 1. Gather data ──────────────────────────────────────────
-            stock_price = self.stock_service.get_stock_price(ticker)
-            technicals = self.technical_service.get_all_indicators(ticker)
-            sentiment = await self.sentiment_service.analyze(ticker)
+            technicals = technical_indicators or self.technical_service.get_all_indicators(ticker)
+            sentiment = sentiment_data or await self.sentiment_service.analyze(ticker)
 
             # ── 2. Score each factor ────────────────────────────────────
             score = 0.0
             reasons: List[str] = []
 
             # — Sentiment (max 30) —
-            sent_label = sentiment.get("label", "NEUTRAL")
+            sent_label = str(sentiment.get("label", "NEUTRAL")).upper()
             sent_score = sentiment.get("score", 0.0)
             if sent_label == "BULLISH":
                 sentiment_points = 25 + min(abs(sent_score) * 5, 5)
@@ -156,7 +166,7 @@ class RecommenderService:
                     "total_articles": sentiment.get("total_articles"),
                     "breakdown": sentiment.get("breakdown"),
                 },
-                "price_data": stock_price,
+                "price_data": price_data,
             }
 
         except HTTPException:

@@ -4,14 +4,29 @@ Calculates RSI, Moving Averages, MACD, and Volatility using pandas/numpy.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from functools import lru_cache
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=64)
+def _cached_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
+    """Cache historical price frames for repeated technical analysis requests."""
+    try:
+        import yfinance as yf
+    except Exception as e:
+        raise ValueError(f"yfinance is not available: {e}")
+
+    stock = yf.Ticker(ticker)
+    df = stock.history(period=period, interval=interval)
+    if df.empty:
+        raise ValueError(f"No historical data found for {ticker}")
+    return df
 
 
 class TechnicalService:
@@ -21,12 +36,14 @@ class TechnicalService:
     def _fetch_dataframe(ticker: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
         """Fetch historical data as a pandas DataFrame."""
         try:
-            stock = yf.Ticker(ticker)
-            df = stock.history(period=period, interval=interval)
-            if df.empty:
-                raise ValueError(f"No historical data found for {ticker}")
-            return df
+            return _cached_history(ticker.upper(), period, interval)
         except Exception as e:
+            # Try shorter periods as a fallback before failing
+            for fallback_period in ("6mo", "3mo", "1mo", "5d"):
+                try:
+                    return _cached_history(ticker.upper(), fallback_period, interval)
+                except Exception:
+                    continue
             raise HTTPException(status_code=404, detail=f"Cannot fetch data for {ticker}: {e}")
 
     @staticmethod
@@ -163,7 +180,25 @@ class TechnicalService:
         Calculate all technical indicators for a given ticker.
         Returns a JSON-ready dict.
         """
-        df = self._fetch_dataframe(ticker, period="1y", interval="1d")
+        try:
+            df = self._fetch_dataframe(ticker, period="1y", interval="1d")
+        except HTTPException:
+            # Return empty indicators instead of failing the whole dashboard
+            return {
+                "symbol": ticker.upper(),
+                "rsi": {"value": 50.0, "period": 14, "signal": "NEUTRAL"},
+                "moving_averages": {
+                    "sma_20": None,
+                    "sma_50": None,
+                    "sma_200": None,
+                    "ema_12": None,
+                    "ema_26": None,
+                    "current_price": None,
+                    "trend": "INSUFFICIENT_DATA",
+                },
+                "macd": {"macd_line": 0.0, "signal_line": 0.0, "histogram": 0.0, "signal": "NEUTRAL"},
+                "volatility": {"daily_volatility": 0.0, "annualized_volatility": 0.0, "risk_level": "MODERATE", "window": 20},
+            }
 
         return {
             "symbol": ticker.upper(),
