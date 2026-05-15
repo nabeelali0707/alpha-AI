@@ -1,4 +1,3 @@
-import yfinance as yf
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -11,23 +10,61 @@ class StockService:
         Fetches the current market price and 24h change for a given ticker.
         """
         try:
-            stock = yf.Ticker(ticker)
-            # Use fast_info if available, else history
-            info = stock.basic_info
-            
-            if not info or info.get('last_price') is None:
-                 # Fallback to history if basic_info fails
-                 hist = stock.history(period="1d")
-                 if hist.empty:
-                     raise ValueError(f"No price data found for {ticker}")
-                 price = hist['Close'].iloc[-1]
-                 prev_close = stock.info.get('previousClose', price)
-            else:
-                price = info['last_price']
-                prev_close = info.get('previous_close', price)
+            try:
+                import yfinance as yf
+            except Exception:
+                yf = None
 
-            change = price - prev_close
-            change_percent = (change / prev_close) * 100 if prev_close else 0
+            if yf is None:
+                raise ValueError("yfinance is not available in the current runtime")
+
+            stock = yf.Ticker(ticker)
+
+            # Try multiple info sources for robustness
+            price = None
+            prev_close = None
+
+            # 1) fast_info (yfinance newer API)
+            fast_info = getattr(stock, "fast_info", None)
+            if fast_info:
+                try:
+                    info = stock.fast_info
+                    price = info.get("last_price") or info.get("last")
+                    prev_close = info.get("previous_close") or info.get("previousClose")
+                except Exception:
+                    price = None
+
+            # 2) stock.info
+            if price is None:
+                try:
+                    info2 = stock.info
+                    price = info2.get("regularMarketPrice") or info2.get("currentPrice") or info2.get("last_price")
+                    prev_close = info2.get("previousClose") or info2.get("previous_close")
+                except Exception:
+                    price = None
+
+            # 3) history fallbacks: try 1d, then 5d, then 1mo
+            if price is None:
+                for p in ("1d", "5d", "7d", "1mo"):
+                    hist = stock.history(period=p)
+                    if hist is not None and not hist.empty:
+                        price = hist['Close'].iloc[-1]
+                        break
+
+            if price is None:
+                raise ValueError(f"No price data found for {ticker}")
+
+            if prev_close is None:
+                # try to derive previous close from history if missing
+                try:
+                    hist2 = stock.history(period="5d")
+                    if hist2 is not None and len(hist2) >= 2:
+                        prev_close = hist2['Close'].iloc[-2]
+                except Exception:
+                    prev_close = price
+
+            change = float(price) - float(prev_close)
+            change_percent = (change / float(prev_close)) * 100 if prev_close else 0
 
             return {
                 "symbol": ticker.upper(),
@@ -36,8 +73,14 @@ class StockService:
                 "change_percent": round(float(change_percent), 2),
                 "timestamp": datetime.now().isoformat()
             }
-        except Exception as e:
-            raise HTTPException(status_code=404, detail=f"Error fetching price for {ticker}: {str(e)}")
+        except Exception:
+            return {
+                "symbol": ticker.upper(),
+                "price": 0.0,
+                "change": 0.0,
+                "change_percent": 0.0,
+                "timestamp": datetime.now().isoformat()
+            }
 
     @staticmethod
     def get_stock_history(ticker: str, period: str = "1mo", interval: str = "1d") -> List[Dict[str, Any]]:
@@ -46,11 +89,16 @@ class StockService:
         Periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
         """
         try:
+            try:
+                import yfinance as yf
+            except Exception:
+                return []
+
             stock = yf.Ticker(ticker)
             hist = stock.history(period=period, interval=interval)
             
             if hist.empty:
-                raise ValueError(f"No history found for ticker {ticker}")
+                return []
 
             # Reset index to get Date as a column
             hist = hist.reset_index()
@@ -67,8 +115,8 @@ class StockService:
                     "volume": int(row['Volume'])
                 })
             return data
-        except Exception as e:
-            raise HTTPException(status_code=404, detail=f"Error fetching history for {ticker}: {str(e)}")
+        except Exception:
+            return []
 
     @staticmethod
     def get_stock_info(ticker: str) -> Dict[str, Any]:
@@ -76,11 +124,40 @@ class StockService:
         Fetches comprehensive company metadata and fundamentals.
         """
         try:
+            try:
+                import yfinance as yf
+            except Exception:
+                return {
+                    "symbol": ticker.upper(),
+                    "name": None,
+                    "sector": None,
+                    "industry": None,
+                    "market_cap": None,
+                    "pe_ratio": None,
+                    "dividend_yield": None,
+                    "fifty_two_week_high": None,
+                    "fifty_two_week_low": None,
+                    "description": None,
+                    "website": None
+                }
+
             stock = yf.Ticker(ticker)
             info = stock.info
             
             if not info or 'symbol' not in info and 'longName' not in info:
-                raise ValueError(f"Invalid ticker or no info available for {ticker}")
+                return {
+                    "symbol": ticker.upper(),
+                    "name": None,
+                    "sector": None,
+                    "industry": None,
+                    "market_cap": None,
+                    "pe_ratio": None,
+                    "dividend_yield": None,
+                    "fifty_two_week_high": None,
+                    "fifty_two_week_low": None,
+                    "description": None,
+                    "website": None
+                }
 
             return {
                 "symbol": info.get("symbol", ticker.upper()),
@@ -95,5 +172,94 @@ class StockService:
                 "description": info.get("longBusinessSummary"),
                 "website": info.get("website")
             }
+        except Exception:
+            return {
+                "symbol": ticker.upper(),
+                "name": None,
+                "sector": None,
+                "industry": None,
+                "market_cap": None,
+                "pe_ratio": None,
+                "dividend_yield": None,
+                "fifty_two_week_high": None,
+                "fifty_two_week_low": None,
+                "description": None,
+                "website": None
+            }
+
+    @staticmethod
+    def get_financials(ticker: str) -> Dict[str, Any]:
+        """
+        Fetches the company's financial statements:
+        income statement, balance sheet, and cash flow.
+        """
+        try:
+            try:
+                import yfinance as yf
+            except Exception:
+                raise HTTPException(status_code=404, detail="yfinance is not available in the current runtime")
+
+            stock = yf.Ticker(ticker)
+
+            def _df_to_dict(df: pd.DataFrame) -> Dict[str, Any]:
+                """Convert a financials DataFrame to a JSON-safe dict."""
+                if df is None or df.empty:
+                    return {}
+                # Columns are dates; rows are line items
+                result = {}
+                for col in df.columns:
+                    key = col.strftime("%Y-%m-%d") if hasattr(col, "strftime") else str(col)
+                    result[key] = {
+                        str(idx): (None if pd.isna(val) else float(val))
+                        for idx, val in df[col].items()
+                    }
+                return result
+
+            return {
+                "symbol": ticker.upper(),
+                "income_statement": _df_to_dict(stock.financials),
+                "balance_sheet": _df_to_dict(stock.balance_sheet),
+                "cash_flow": _df_to_dict(stock.cashflow),
+            }
+        except HTTPException:
+            raise
         except Exception as e:
-            raise HTTPException(status_code=404, detail=f"Error fetching info for {ticker}: {str(e)}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Error fetching financials for {ticker}: {str(e)}",
+            )
+
+    @staticmethod
+    def get_corporate_actions(ticker: str) -> Dict[str, Any]:
+        """
+        Fetches historical dividends and stock splits.
+        """
+        try:
+            try:
+                import yfinance as yf
+            except Exception:
+                raise HTTPException(status_code=404, detail="yfinance is not available in the current runtime")
+
+            stock = yf.Ticker(ticker)
+
+            def _series_to_dict(series: pd.Series) -> Dict[str, Any]:
+                """Convert a pandas Series with DatetimeIndex to a JSON-safe dict."""
+                if series is None or series.empty:
+                    return {}
+                return {
+                    idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx): float(val)
+                    for idx, val in series.items()
+                }
+
+            return {
+                "symbol": ticker.upper(),
+                "dividends": _series_to_dict(stock.dividends),
+                "splits": _series_to_dict(stock.splits),
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Error fetching corporate actions for {ticker}: {str(e)}",
+            )

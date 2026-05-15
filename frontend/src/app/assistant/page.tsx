@@ -1,29 +1,59 @@
-'use client';
+"use client";
+
 import React, { useState } from 'react';
 
+import { getRecommendation, getSentiment } from '@/lib/api';
+
+type ChatMessage = {
+  role: 'assistant' | 'user';
+  content: string;
+  time: string;
+};
+
 export default function Assistant() {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Neural Core v2.4 initialized. Ready for market analysis. What is your query?', time: '08:00:00' }
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: 'Neural Core initialized. Enter a ticker like AAPL or NVDA.', time: '08:00:00' },
   ]);
   const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || loading) return;
 
-    const userMessage = { role: 'user', content: input, time: new Date().toLocaleTimeString([], { hour12: false }) };
-    setMessages(prev => [...prev, userMessage]);
+    const ticker = input.trim().toUpperCase();
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+
+    setMessages((prev) => [...prev, { role: 'user', content: ticker, time }]);
     setInput('');
+    setLoading(true);
 
-    // Simulated AI response
-    setTimeout(() => {
-      const assistantMessage = { 
-        role: 'assistant', 
-        content: `Analyzing "${input}"... My neural patterns suggest a bullish divergence in the tech sector over the next 48 hours. Sentiment score: 0.84/1.0.`, 
-        time: new Date().toLocaleTimeString([], { hour12: false }) 
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-    }, 1000);
+    try {
+      const [sentiment, recommendation] = await Promise.all([
+        getSentiment(ticker),
+        getRecommendation(ticker),
+      ]);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: `${ticker}: ${recommendation.recommendation} with ${Math.round(recommendation.confidence * 100)}% confidence. Sentiment: ${sentiment.label ?? 'UNKNOWN'}.`,
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+        },
+      ]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: error instanceof Error ? error.message : 'Failed to fetch backend analysis.',
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -68,7 +98,9 @@ export default function Assistant() {
               fontFamily: 'var(--font-body)'
             }}
           />
-          <button type="submit" className="btn btn-primary" style={{ padding: '0 24px' }}>EXECUTE</button>
+          <button type="submit" className="btn btn-primary" style={{ padding: '0 24px' }}>
+            {loading ? 'RUNNING' : 'EXECUTE'}
+          </button>
         </form>
       </div>
     </div>

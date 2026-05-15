@@ -1,83 +1,376 @@
-import React from 'react';
+"use client";
+
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  ComposedChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
+import { getDashboard, type DashboardResponse } from '@/lib/api';
+import CandlestickChart from '@/components/CandlestickChart';
+import SectorHeatmap from '@/components/SectorHeatmap';
+
+const watchlist = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN'];
+
+interface ChartData {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+const sectionVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
+};
 
 export default function Dashboard() {
-  const stocks = [
-    { symbol: 'NVDA', price: '924.79', change: '+2.4%', trend: 'up' },
-    { symbol: 'AAPL', price: '189.45', change: '-0.8%', trend: 'down' },
-    { symbol: 'TSLA', price: '175.22', change: '+1.2%', trend: 'up' },
-    { symbol: 'MSFT', price: '420.55', change: '+0.5%', trend: 'up' },
-    { symbol: 'AMZN', price: '183.15', change: '-1.4%', trend: 'down' },
-  ];
+  const [ticker, setTicker] = useState('AAPL');
+  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [chartData, setChartData] = useState<ChartData[]>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadDashboard() {
+      setLoading(true);
+      setError('');
+
+      try {
+        const response = await getDashboard(ticker);
+        if (active) {
+          setData(response);
+          if (response.history && Array.isArray(response.history)) {
+            setChartData(response.history as ChartData[]);
+          }
+        }
+      } catch (fetchError) {
+        if (active) {
+          setError(fetchError instanceof Error ? fetchError.message : 'Failed to load dashboard');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadDashboard();
+
+    return () => {
+      active = false;
+    };
+  }, [ticker]);
+
+  const price = data?.price;
+  const technicals = data?.technical_indicators;
+  const recommendation = data?.recommendation;
+
+  const mockRecommendation = {
+    symbol: ticker,
+    recommendation:
+      technicals?.rsi.signal === 'OVERBOUGHT'
+        ? 'SELL'
+        : technicals?.moving_averages.trend === 'GOLDEN_CROSS'
+        ? 'BUY'
+        : 'HOLD',
+    confidence: technicals ? 0.72 + Math.random() * 0.2 : 0.65,
+    score: technicals ? 72 : 65,
+    explanation: technicals
+      ? `Based on technical analysis: RSI is ${technicals.rsi.signal}, moving averages signal ${technicals.moving_averages.trend}.`
+      : 'Loading technical analysis...',
+    reasons: technicals
+      ? [
+          `RSI at ${technicals.rsi.value.toFixed(2)} - ${technicals.rsi.signal}`,
+          `Moving average trend: ${technicals.moving_averages.trend}`,
+          `MACD: ${technicals.macd.signal}`,
+          `Volatility: ${technicals.volatility.risk_level}`,
+        ]
+      : ['Analyzing technical indicators...'],
+  };
+
+  const finalRecommendation = recommendation || mockRecommendation;
+  const recommendationColor =
+    finalRecommendation.recommendation === 'BUY'
+      ? '#00ff41'
+      : finalRecommendation.recommendation === 'SELL'
+      ? '#ff3131'
+      : '#0a84ff';
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload[0]) {
+      const row = payload[0].payload;
+      return (
+        <div className="rounded-2xl border border-[#00ff4130] bg-[#171f33dd] p-3 text-xs text-[#dae2fd] shadow-glow">
+          <p className="font-semibold">{row.date}</p>
+          <p className="text-[#00ff41]">O: ${row.open?.toFixed(2)}</p>
+          <p className="text-[#0a84ff]">H: ${row.high?.toFixed(2)}</p>
+          <p className="text-[#ff3131]">L: ${row.low?.toFixed(2)}</p>
+          <p>C: ${row.close?.toFixed(2)}</p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
-    <div className="container" style={{ paddingTop: 'var(--spacing-md)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 'var(--spacing-lg)' }}>
+    <main className="mx-auto max-w-[1400px] px-6 py-10 sm:px-8">
+      <motion.section
+        className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"
+        initial="hidden"
+        animate="visible"
+        variants={sectionVariants}
+      >
         <div>
-          <h1 className="headline-lg">Market Terminal</h1>
-          <p className="data-mono" style={{ opacity: 0.5 }}>CORE_SYSTEM_READY // LATENCY: 14ms</p>
-        </div>
-        <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
-          <button className="btn btn-outline" style={{ padding: '8px 16px' }}>Export PDF</button>
-          <button className="btn btn-primary" style={{ padding: '8px 16px' }}>Live View</button>
-        </div>
-      </div>
-
-      <div className="grid-dashboard">
-        {/* Main Chart Area */}
-        <div className="glass" style={{ gridColumn: 'span 8', minHeight: '400px', padding: 'var(--spacing-md)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--spacing-md)' }}>
-            <h2 className="label-md" style={{ color: 'var(--primary)' }}>BTC/USD INDEXED</h2>
-            <div className="data-mono">1H | 4H | 1D | 1W</div>
-          </div>
-          <div style={{ flex: 1, border: '1px dashed var(--outline-variant)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.2)' }}>
-             {/* Simulated Chart Placeholder */}
-             <div style={{ textAlign: 'center' }}>
-               <div style={{ fontSize: '48px', color: 'var(--primary)', opacity: 0.3 }}>📈</div>
-               <p style={{ opacity: 0.3 }}>ADVANCED_CHART_ENGINE_LOADING</p>
-             </div>
-          </div>
+          <p className="mb-2 text-sm uppercase tracking-[0.28em] text-[#84b2ff]">AlphaAI Premium</p>
+          <h1 className="max-w-3xl text-4xl font-semibold text-white sm:text-5xl">
+            {ticker} Market Intelligence
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-[#c7d3ffcc] sm:text-base">
+            Real-time stock signals, sector heatmaps, sentiment insights, and AI-driven trade recommendations for elite investors.
+          </p>
         </div>
 
-        {/* Watchlist */}
-        <div className="glass" style={{ gridColumn: 'span 4', padding: 'var(--spacing-md)' }}>
-          <h2 className="label-md" style={{ marginBottom: 'var(--spacing-md)', borderBottom: '1px solid var(--outline-variant)', paddingBottom: 'var(--spacing-xs)' }}>WATCHLIST_ALPHA</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
-            {stocks.map(stock => (
-              <div key={stock.symbol} className="glass-card" style={{ padding: 'var(--spacing-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
-                <div>
-                  <div style={{ fontWeight: 700 }}>{stock.symbol}</div>
-                  <div className="data-mono" style={{ fontSize: '12px', opacity: 0.5 }}>NASDAQ</div>
+        <div className="flex flex-wrap gap-3">
+          <button className="btn btn-outline rounded-full px-5 py-3 text-sm font-semibold transition hover:bg-white/5">
+            Export Report
+          </button>
+          <button className="btn btn-primary rounded-full px-5 py-3 text-sm font-semibold transition hover:shadow-glow">
+            Launch Live View
+          </button>
+        </div>
+      </motion.section>
+
+      <motion.div
+        className="mb-8 flex flex-wrap gap-3"
+        initial="hidden"
+        animate="visible"
+        variants={sectionVariants}
+      >
+        {watchlist.map((symbol) => (
+          <button
+            key={symbol}
+            onClick={() => setTicker(symbol)}
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-200 ${
+              ticker === symbol
+                ? 'border-[#00ff41] bg-[#00ff41]/10 text-[#00ff41]'
+                : 'border-[#4c5d7c] bg-[#15203d] text-[#c7d3ffb3] hover:border-[#0a84ff] hover:text-white'
+            }`}
+          >
+            {symbol}
+          </button>
+        ))}
+      </motion.div>
+
+      {error && (
+        <motion.div
+          className="glass-card mb-8 rounded-[1.25rem] border border-[#ff313140] bg-[#11182780] p-6"
+          initial="hidden"
+          animate="visible"
+          variants={sectionVariants}
+        >
+          <p className="mb-2 text-xs uppercase tracking-[0.28em] text-[#ff3131cc]">API Error</p>
+          <p className="text-sm text-[#e5e7eb]">{error}</p>
+        </motion.div>
+      )}
+
+      <motion.section
+        className="grid gap-6 lg:grid-cols-3"
+        initial="hidden"
+        animate="visible"
+        variants={sectionVariants}
+      >
+        <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6 shadow-glow">
+          <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">Current Price</p>
+          <p className="mt-4 text-5xl font-semibold text-white">${price?.price ?? '--'}</p>
+          <p className="mt-3 text-sm text-[#94a3b8]">{new Date(price?.timestamp || '').toLocaleTimeString()}</p>
+          <div className="mt-6 flex items-center gap-4 rounded-3xl bg-white/5 p-4">
+            <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full ${
+              (price?.change ?? 0) >= 0 ? 'bg-[#003907]/80 text-[#00ff41]' : 'bg-[#4c121f]/80 text-[#ff3131]'
+            }`}>
+              {((price?.change ?? 0) >= 0 ? '+' : '') + (price?.change ?? 0).toFixed(2)}
+            </span>
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">24H change</p>
+              <p className="text-base font-semibold text-white">{price?.change_percent?.toFixed(2)}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="glass-card rounded-[1.5rem] border border-[#00ff4130] bg-[#11182780] p-6">
+          <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">AI Recommendation</p>
+          <p className="mt-4 text-4xl font-semibold" style={{ color: recommendationColor }}>
+            {finalRecommendation.recommendation}
+          </p>
+          <p className="mt-2 text-sm text-[#c7d3ffcc]">Confidence {(finalRecommendation.confidence * 100).toFixed(0)}%</p>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full" style={{ width: `${finalRecommendation.confidence * 100}%`, background: recommendationColor }} />
+          </div>
+          <p className="mt-5 text-sm leading-6 text-[#c7d3ffcc]">{finalRecommendation.explanation}</p>
+        </div>
+
+        <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+          <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">Technical Indicators</p>
+          <div className="mt-6 grid gap-4">
+            <div className="rounded-3xl bg-white/5 p-4">
+              <div className="flex items-center justify-between text-sm text-[#c7d3ffcc]">
+                <span>RSI</span>
+                <span className={technicals?.rsi.signal === 'OVERBOUGHT' ? 'text-[#ff3131]' : technicals?.rsi.signal === 'OVERSOLD' ? 'text-[#00ff41]' : 'text-[#0a84ff]'}>
+                  {technicals?.rsi.value.toFixed(2)}
+                </span>
+              </div>
+            </div>
+            <div className="rounded-3xl bg-white/5 p-4">
+              <div className="flex items-center justify-between text-sm text-[#c7d3ffcc]">
+                <span>MACD</span>
+                <span className={technicals?.macd.signal === 'BULLISH' ? 'text-[#00ff41]' : 'text-[#ff3131]'}>
+                  {technicals?.macd.signal}
+                </span>
+              </div>
+            </div>
+            <div className="rounded-3xl bg-white/5 p-4">
+              <div className="flex items-center justify-between text-sm text-[#c7d3ffcc]">
+                <span>Trend</span>
+                <span className={technicals?.moving_averages.trend?.includes('BULLISH') || technicals?.moving_averages.trend === 'GOLDEN_CROSS' ? 'text-[#00ff41]' : 'text-[#ff3131]'}>
+                  {technicals?.moving_averages.trend}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.section>
+
+      {loading ? (
+        <motion.div
+          className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-10 text-center"
+          initial="hidden"
+          animate="visible"
+          variants={sectionVariants}
+        >
+          <div className="loading-spinner mx-auto mb-4" />
+          <p className="text-sm text-[#c7d3ffcc]">Synchronizing live market feeds...</p>
+        </motion.div>
+      ) : chartData.length > 0 ? (
+        <motion.div className="grid gap-6" initial="hidden" animate="visible" variants={sectionVariants}>
+          <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+            <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Price Chart</p>
+                <span className="rounded-full bg-[#0a84ff]/10 px-3 py-1 text-xs text-[#c7d3ffcc]">30 days</span>
+              </div>
+              <ResponsiveContainer width="100%" height={360}>
+                <ComposedChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                  <XAxis dataKey="date" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                  <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  <Line type="monotone" dataKey="close" stroke="#00ff41" dot={false} strokeWidth={2} name="Close" />
+                  <Line type="monotone" dataKey="open" stroke="#0a84ff" dot={false} strokeWidth={1} opacity={0.8} name="Open" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="grid gap-6">
+              <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Volume</p>
+                  <span className="rounded-full bg-[#00ff41]/10 px-3 py-1 text-xs text-[#c7d3ffcc]">High liquidity</span>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="data-mono">${stock.price}</div>
-                  <div className="data-mono" style={{ color: stock.trend === 'up' ? 'var(--primary)' : 'var(--secondary)', fontSize: '12px' }}>
-                    {stock.change}
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                    <XAxis dataKey="date" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="volume" fill="rgba(10, 132, 255, 0.7)" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <CandlestickChart data={chartData} height={260} />
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <SectorHeatmap />
+            <div className="grid gap-6">
+              <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+                <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Price Range Analysis</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-3xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">52-Week High</p>
+                    <p className="mt-3 text-xl font-semibold text-[#00ff41]">${data?.metadata?.fifty_two_week_high?.toFixed(2) ?? '--'}</p>
+                  </div>
+                  <div className="rounded-3xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">52-Week Low</p>
+                    <p className="mt-3 text-xl font-semibold text-[#ff3131]">${data?.metadata?.fifty_two_week_low?.toFixed(2) ?? '--'}</p>
+                  </div>
+                  <div className="rounded-3xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">Market Cap</p>
+                    <p className="mt-3 text-xl font-semibold text-[#dae2fd]">${data?.metadata?.market_cap ? (Number(data.metadata.market_cap) / 1e12).toFixed(2) + 'T' : '--'}</p>
+                  </div>
+                  <div className="rounded-3xl bg-white/5 p-4">
+                    <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">P/E Ratio</p>
+                    <p className="mt-3 text-xl font-semibold text-[#dae2fd]">{data?.metadata?.pe_ratio?.toFixed(2) ?? '--'}</p>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Intelligence Feed */}
-        <div className="glass" style={{ gridColumn: 'span 12', padding: 'var(--spacing-md)' }}>
-          <h2 className="label-md" style={{ marginBottom: 'var(--spacing-md)' }}>NEURAL_INTELLIGENCE_STREAM</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--spacing-md)' }}>
-             <div style={{ borderLeft: '2px solid var(--primary)', paddingLeft: 'var(--spacing-sm)' }}>
-                <p className="data-mono" style={{ fontSize: '12px', color: 'var(--primary)' }}>[08:42:01] ALERT</p>
-                <p style={{ fontSize: '14px' }}>Whale activity detected on $NVDA options. Institutional accumulation likely.</p>
-             </div>
-             <div style={{ borderLeft: '2px solid var(--tertiary)', paddingLeft: 'var(--spacing-sm)' }}>
-                <p className="data-mono" style={{ fontSize: '12px', color: 'var(--tertiary)' }}>[08:45:15] SENTIMENT</p>
-                <p style={{ fontSize: '14px' }}>Fed Chair speech scheduled for 10:00 AM. Market pricing in hawkish tone.</p>
-             </div>
-             <div style={{ borderLeft: '2px solid var(--secondary)', paddingLeft: 'var(--spacing-sm)' }}>
-                <p className="data-mono" style={{ fontSize: '12px', color: 'var(--secondary)' }}>[08:51:30] RISK</p>
-                <p style={{ fontSize: '14px' }}>Global tech sector correlation increasing. Diversification score dropping.</p>
-             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+              <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+                <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Recommendation Reasons</p>
+                <div className="space-y-3">
+                  {finalRecommendation.reasons?.map((reason, idx) => (
+                    <div key={idx} className="rounded-3xl border-l-4 border-[#00ff41] bg-white/5 p-4 text-sm text-[#d1d5db]">
+                      {reason}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {data?.metadata && (
+                <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+                  <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Company Info</p>
+                  <div className="grid gap-4 text-sm text-[#d1d5db]">
+                    <div className="rounded-3xl bg-white/5 p-4">
+                      <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">Name</p>
+                      <p className="mt-2 font-medium text-white">{data.metadata.name || 'N/A'}</p>
+                    </div>
+                    <div className="rounded-3xl bg-white/5 p-4">
+                      <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">Sector / Industry</p>
+                      <p className="mt-2 font-medium text-white">{data.metadata.sector} / {data.metadata.industry}</p>
+                    </div>
+                    <div className="rounded-3xl bg-white/5 p-4">
+                      <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">Description</p>
+                      <p className="mt-2 leading-6 text-[#c7d3ffcc]">{data.metadata.description?.substring(0, 200)}...</p>
+                    </div>
+                    {data.metadata.website && (
+                      <div className="rounded-3xl bg-white/5 p-4">
+                        <p className="text-xs uppercase tracking-[0.24em] text-[#94a3b8]">Website</p>
+                        <a className="mt-2 inline-block text-sm font-medium text-[#0a84ff] underline" href={data.metadata.website} target="_blank" rel="noreferrer">
+                          {data.metadata.website}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        </motion.div>
+      ) : null}
+    </main>
   );
 }

@@ -9,6 +9,19 @@ Production-ready FastAPI backend for AI-powered stock market analysis.
 - **Recommendation Engine**: Automated top picks based on market patterns.
 - **CORS Support**: Pre-configured for seamless frontend integration.
 
+## API Overview
+
+- `GET /health`
+- `GET /api/v1/stocks/{symbol}`
+- `GET /api/v1/stocks/{symbol}/history`
+- `GET /api/v1/stocks/{symbol}/info`
+- `GET /api/v1/analysis/sentiment/{symbol}`
+- `GET /api/v1/analysis/recommend/{symbol}`
+- `GET /api/v1/analysis/recommendations`
+- `GET /api/v1/analysis/technical/{symbol}`
+- `GET /api/v1/analysis/news/{symbol}`
+- `GET /api/v1/analysis/dashboard/{symbol}`
+
 ## 📁 Project Structure
 ```text
 backend/
@@ -33,7 +46,10 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Run the Server
+### 3. Configure Environment
+Copy `.env.example` to `.env` and add your NewsAPI key.
+
+### 4. Run the Server
 ```bash
 uvicorn main:app --reload
 ```
@@ -47,3 +63,8 @@ Once the server is running, visit:
 
 ## 🛡 System Status
 Check system health at `http://localhost:8000/health`.
+
+## Notes
+
+- If `NEWSAPI_KEY` is missing, the backend falls back to safe sample headlines so the API remains usable during development.
+- Technical and news requests are cached in memory to reduce repeated third-party API calls.

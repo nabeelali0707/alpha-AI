@@ -1,14 +1,28 @@
-from pydantic import BaseModel
-from typing import List
+"""
+Analysis models — re-exports from the consolidated stock.py models module.
+Kept for backward compatibility with existing imports.
+"""
 
-class SentimentResult(BaseModel):
-    symbol: str
-    score: float  # -1.0 to 1.0
-    label: str    # BULLISH, BEARISH, NEUTRAL
-    indicators: List[str]
+from models.stock import (
+    SentimentResult,
+    SentimentBreakdown,
+    HeadlineSentiment,
+    HeadlineResult,
+    Recommendation,
+    SentimentSummary,
+    TechnicalIndicators,
+    DashboardResponse,
+    ErrorResponse,
+)
 
-class Recommendation(BaseModel):
-    symbol: str
-    action: str   # BUY, SELL, HOLD
-    confidence: float
-    reasoning: str
+__all__ = [
+    "SentimentResult",
+    "SentimentBreakdown",
+    "HeadlineSentiment",
+    "HeadlineResult",
+    "Recommendation",
+    "SentimentSummary",
+    "TechnicalIndicators",
+    "DashboardResponse",
+    "ErrorResponse",
+]
