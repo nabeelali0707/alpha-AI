@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from utils.config import settings
 from utils.error_handlers import register_error_handlers
-from routes import stocks, analysis
+from routes import stocks, analysis, portfolio
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -84,6 +84,7 @@ async def health_check():
 # ── Routers ─────────────────────────────────────────────────────────────────
 app.include_router(stocks.router, prefix="/api/v1/stocks", tags=["Stocks"])
 app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["AI Analysis"])
+app.include_router(portfolio.router, prefix="/api/v1", tags=["Portfolio"])
 
 # ── Root ────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["System"], include_in_schema=False)

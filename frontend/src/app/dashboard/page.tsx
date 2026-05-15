@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { getDashboard, type DashboardResponse } from '@/lib/api';
+import CandlestickChart from '@/components/CandlestickChart';
+import SectorHeatmap from '@/components/SectorHeatmap';
 
 const watchlist = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN'];
 
@@ -248,6 +250,12 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Candlestick Chart */}
+          <CandlestickChart data={chartData} height={350} />
+
+          {/* Sector Heatmap */}
+          <SectorHeatmap />
 
           {/* Price Range Analysis */}
           <div className="glass" style={{ padding: 'var(--spacing-md)' }}>
