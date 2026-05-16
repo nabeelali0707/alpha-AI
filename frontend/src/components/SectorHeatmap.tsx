@@ -16,18 +16,6 @@ interface SectorHeatmapProps {
   data?: SectorData[];
 }
 
-// Mock sector data for demonstration
-const mockSectorData: SectorData[] = [
-  { sector: 'Technology', performance: 15.2, gainers: 45, losers: 12, average_change: 2.1, market_cap: '$12.5T' },
-  { sector: 'Healthcare', performance: 8.7, gainers: 38, losers: 18, average_change: 1.4, market_cap: '$4.2T' },
-  { sector: 'Financials', performance: 12.4, gainers: 42, losers: 15, average_change: 1.9, market_cap: '$8.1T' },
-  { sector: 'Consumer', performance: 5.3, gainers: 30, losers: 25, average_change: 0.8, market_cap: '$3.7T' },
-  { sector: 'Energy', performance: 18.9, gainers: 22, losers: 8, average_change: 3.2, market_cap: '$1.9T' },
-  { sector: 'Industrials', performance: 6.4, gainers: 28, losers: 22, average_change: 1.0, market_cap: '$3.2T' },
-  { sector: 'Real Estate', performance: 3.2, gainers: 15, losers: 20, average_change: 0.4, market_cap: '$1.5T' },
-  { sector: 'Utilities', performance: -2.1, gainers: 8, losers: 18, average_change: -0.5, market_cap: '$0.9T' },
-];
-
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload[0]) {
     const data = payload[0].payload;
@@ -55,8 +43,20 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-export default function SectorHeatmap({ data = mockSectorData }: SectorHeatmapProps) {
-  // Sort by performance
+export default function SectorHeatmap({ data = [] }: SectorHeatmapProps) {
+  if (!data.length) {
+    return (
+      <div className="glass" style={{ padding: 'var(--spacing-md)' }}>
+        <h3 style={{ marginBottom: 'var(--spacing-md)', color: '#00ff41' }}>
+          SECTOR PERFORMANCE HEATMAP
+        </h3>
+        <p style={{ fontSize: '14px', opacity: 0.75 }}>
+          Live sector data is not currently provided by the backend. This panel will populate once a live sector feed is connected.
+        </p>
+      </div>
+    );
+  }
+
   const sortedData = [...data].sort((a, b) => b.performance - a.performance);
 
   return (

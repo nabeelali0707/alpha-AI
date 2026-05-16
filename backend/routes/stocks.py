@@ -5,7 +5,15 @@ Stock Routes — Step 4 & 15 (Enhanced with Swagger docs and response models)
 from fastapi import APIRouter, Query
 from typing import List
 
-from models.stock import StockPrice, StockHistoryEntry, StockMetadata, ErrorResponse
+from models.stock import (
+    StockPrice,
+    StockHistoryEntry,
+    StockMetadata,
+    ErrorResponse,
+    MarketOverviewResponse,
+    MarketItem,
+    AutocompleteResult,
+)
 from services.stock_service import StockService
 
 router = APIRouter()
@@ -94,4 +102,57 @@ async def get_stock_financials(symbol: str):
 async def get_stock_actions(symbol: str):
     """Fetch historical dividends and stock splits."""
     return stock_service.get_corporate_actions(symbol)
+
+
+@router.get(
+    "/market/overview",
+    response_model=MarketOverviewResponse,
+    summary="Get global market overview",
+    description="Returns grouped market data for PSX, US, crypto, forex, commodities, and indices.",
+)
+async def get_market_overview():
+    return stock_service.get_market_overview()
+
+
+@router.get(
+    "/market/psx",
+    response_model=List[MarketItem],
+    summary="Get PSX market overview",
+    description="Returns PSX market data grouped for Pakistan Stock Exchange tickers.",
+)
+async def get_market_psx():
+    return stock_service.get_market_category("PSX")
+
+
+@router.get(
+    "/market/crypto",
+    response_model=List[MarketItem],
+    summary="Get crypto market overview",
+    description="Returns crypto market data.",
+)
+async def get_market_crypto():
+    return stock_service.get_market_category("CRYPTO")
+
+
+@router.get(
+    "/market/forex",
+    response_model=List[MarketItem],
+    summary="Get forex market overview",
+    description="Returns forex market data.",
+)
+async def get_market_forex():
+    return stock_service.get_market_category("FOREX")
+
+
+@router.get(
+    "/search/autocomplete",
+    response_model=List[AutocompleteResult],
+    summary="Autocomplete stock symbols",
+    description="Search PSX symbols first, then yfinance for matching tickers.",
+)
+async def autocomplete_search(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(default=10, ge=1, le=20, description="Max results"),
+):
+    return stock_service.search_autocomplete(q, limit=limit)
 

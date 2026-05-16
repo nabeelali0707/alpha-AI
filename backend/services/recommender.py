@@ -151,6 +151,13 @@ class RecommenderService:
                 action = "HOLD"
 
             explanation = self._build_explanation(action, reasons)
+            urdu_explanation = self._build_urdu_explanation(
+                action=action,
+                ticker=ticker.upper(),
+                rsi_value=float(rsi_value),
+                sentiment_label=sent_label,
+                ma_trend=ma_trend,
+            )
 
             return {
                 "symbol": ticker.upper(),
@@ -158,6 +165,7 @@ class RecommenderService:
                 "confidence": confidence,
                 "score": round(score, 2),
                 "explanation": explanation,
+                "urdu_explanation": urdu_explanation,
                 "reasons": reasons,
                 "technical_indicators": technicals,
                 "sentiment_summary": {
@@ -208,3 +216,29 @@ class RecommenderService:
         body = header.get(action, "Analysis complete.")
         detail_lines = "\n".join(f"  • {r}" for r in reasons)
         return f"{body}\n\nKey factors:\n{detail_lines}"
+
+    @staticmethod
+    def _build_urdu_explanation(action: str, ticker: str, rsi_value: float, sentiment_label: str, ma_trend: str) -> str:
+        rsi_urdu = f"RSI {rsi_value:.0f} ہے"
+
+        if action == "BUY":
+            return (
+                f"{ticker} کے لیے ہماری AI کا مشورہ ہے: خریدیں۔ "
+                f"{rsi_urdu} جو کہ اچھی پوزیشن ظاہر کرتا ہے۔ "
+                f"مارکیٹ سینٹیمنٹ {sentiment_label} ہے۔ "
+                f"ٹرینڈ {ma_trend} ہے۔ "
+                f"یہ خریداری کا اچھا موقع ہو سکتا ہے۔"
+            )
+        if action == "SELL":
+            return (
+                f"{ticker} کے لیے ہماری AI کا مشورہ ہے: بیچیں۔ "
+                f"{rsi_urdu}۔ "
+                f"مارکیٹ سینٹیمنٹ {sentiment_label} ہے۔ "
+                "ابھی احتیاط ضروری ہے۔"
+            )
+
+        return (
+            f"{ticker} کے لیے ہماری AI کا مشورہ ہے: انتظار کریں۔ "
+            f"{rsi_urdu}۔ "
+            "مارکیٹ ابھی غیر یقینی ہے — کوئی بڑا فیصلہ نہ کریں۔"
+        )

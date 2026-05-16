@@ -5,10 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   getDashboard,
-  getStockHistory,
   getStockNews,
   type DashboardResponse,
-  type StockHistoryEntry,
   type NewsArticle,
 } from "@/lib/api";
 
@@ -27,12 +25,7 @@ import WatchlistPanel, {
 } from "@/components/WatchlistPanel";
 
 // ── Timeframe → yfinance params mapping ──────────────────────────────────────
-const TF_MAP: Record<string, { period: string; interval: string }> = {
-  "1D": { period: "1d",  interval: "5m" },
-  "1W": { period: "5d",  interval: "15m" },
-  "1M": { period: "1mo", interval: "1d" },
-  "1Y": { period: "1y",  interval: "1wk" },
-};
+const TF_BUTTONS = ["1m", "5m", "15m", "1H", "4H", "1D", "1W", "1M"] as const;
 
 // ── Loading skeleton strips ──────────────────────────────────────────────────
 function Skeleton({ h = 200, rounded = "1.5rem" }: { h?: number; rounded?: string }) {
@@ -97,13 +90,13 @@ export default function StockDetailPage() {
 
   // Data state
   const [dashboard, setDashboard]     = useState<DashboardResponse | null>(null);
-  const [chartData, setChartData]     = useState<StockHistoryEntry[]>([]);
   const [news, setNews]               = useState<NewsArticle[]>([]);
-  const [timeframe, setTimeframe]     = useState("1M");
+  const [timeframe, setTimeframe]     = useState("1D");
+  const [tab, setTab] = useState("technical");
+  const [indicatorVisibility, setIndicatorVisibility] = useState({ rsi: true, macd: true, sma20: true, sma50: true, bb: false });
 
   // Loading states
   const [loadingDash, setLoadingDash]   = useState(true);
-  const [loadingChart, setLoadingChart] = useState(true);
   const [loadingNews, setLoadingNews]   = useState(true);
 
   // Error state
@@ -132,20 +125,6 @@ export default function StockDetailPage() {
     }
   }, [ticker]);
 
-  // ── Load chart data based on timeframe ───────────────────────────────────
-  const loadChart = useCallback(async (tf: string) => {
-    setLoadingChart(true);
-    try {
-      const { period, interval } = TF_MAP[tf] ?? TF_MAP["1M"];
-      const data = await getStockHistory(ticker, period, interval);
-      setChartData(data);
-    } catch {
-      setChartData([]);
-    } finally {
-      setLoadingChart(false);
-    }
-  }, [ticker]);
-
   // ── Load news ────────────────────────────────────────────────────────────
   const loadNews = useCallback(async () => {
     setLoadingNews(true);
@@ -162,14 +141,8 @@ export default function StockDetailPage() {
   // Initial loads
   useEffect(() => {
     loadDashboard();
-    loadChart("1M");
     loadNews();
-  }, [loadDashboard, loadChart, loadNews]);
-
-  const handleTimeframeChange = (tf: string) => {
-    setTimeframe(tf);
-    loadChart(tf);
-  };
+  }, [loadDashboard, loadNews]);
 
   // Cast sentiment for SentimentPanel
   const sentiment = dashboard?.sentiment as any;
@@ -210,12 +183,111 @@ export default function StockDetailPage() {
         {error && <ErrorBanner message={error} onRetry={loadDashboard} />}
 
         {/* ── Main layout: [content] + [watchlist sidebar] ─────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "20px", alignItems: "start" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 300px",
+            gridTemplateAreas: `"chart sidebar" "tabs tabs"`,
+            gap: "20px",
+            alignItems: "start",
+          }}
+        >
+          <div style={{ gridArea: "chart", minWidth: 0 }}>
+            <div style={{
+              background: "#0f1629",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: "16px",
+              padding: "16px",
+              marginBottom: "16px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <h2 style={{ color: "#e5e7eb", fontSize: 20, margin: 0 }}>{ticker}</h2>
+                  <span style={{ color: "#9ca3af", fontSize: 12 }}>{dashboard?.metadata?.name ?? ""}</span>
+                  <span style={{ color: (dashboard?.price?.change ?? 0) >= 0 ? "#00ff41" : "#ff3131", fontWeight: 700 }}>
+                    ${dashboard?.price?.price?.toFixed(2) ?? "--"} ({dashboard?.price?.change_percent?.toFixed(2) ?? "0"}%)
+                  </span>
+                  <button onClick={toggleWatchlist} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: watched ? "#00ff41" : "#9ca3af", borderRadius: 8, padding: "4px 8px", cursor: "pointer" }}>
+                    ★
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {TF_BUTTONS.map((tf) => (
+                    <button
+                      key={tf}
+                      onClick={() => setTimeframe(tf)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: timeframe === tf ? "rgba(0,255,65,0.12)" : "transparent",
+                        color: timeframe === tf ? "#00ff41" : "#9ca3af",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {tf}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { label: "TL", name: "Trend Line" },
+                    { label: "H", name: "Horizontal Line" },
+                    { label: "F", name: "Fibonacci" },
+                    { label: "R", name: "Rectangle" },
+                  ].map((tool) => (
+                    <button
+                      key={tool.label}
+                      onClick={() => alert(`Coming soon: ${tool.name}`)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "transparent",
+                        color: "#9ca3af",
+                        cursor: "pointer",
+                        fontSize: 11,
+                      }}
+                    >
+                      {tool.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {(["rsi", "macd", "sma20", "sma50", "bb"] as const).map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => setIndicatorVisibility((s) => ({ ...s, [key]: !s[key] }))}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: indicatorVisibility[key] ? "rgba(59,130,246,0.15)" : "transparent",
+                        color: indicatorVisibility[key] ? "#3b82f6" : "#9ca3af",
+                        cursor: "pointer",
+                        fontSize: 11,
+                      }}
+                    >
+                      {key.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* ── LEFT COLUMN ─────────────────────────────────────────────── */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "20px", minWidth: 0 }}>
+              <StockChart
+                ticker={ticker}
+                currentTimeframe={timeframe}
+                onTimeframeChange={setTimeframe}
+                showControls={false}
+                indicatorVisibility={indicatorVisibility}
+                onIndicatorToggle={(name, value) => setIndicatorVisibility((s) => ({ ...s, [name]: value }))}
+              />
+            </div>
+          </div>
 
-            {/* Company Overview */}
+          <div style={{ gridArea: "sidebar", display: "flex", flexDirection: "column", gap: 16, position: "sticky", top: 90 }}>
             {loadingDash ? (
               <Skeleton h={220} />
             ) : (
@@ -228,114 +300,66 @@ export default function StockDetailPage() {
                 onWatchlistToggle={toggleWatchlist}
               />
             )}
+            <AIRecommendationCard ticker={ticker} data={dashboard?.recommendation as any ?? null} loading={loadingDash} />
+            <SentimentPanel data={sentiment} loading={loadingDash} />
+          </div>
 
-            {/* Chart */}
-            <StockChart
-              data={chartData}
-              loading={loadingChart}
-              onTimeframeChange={handleTimeframeChange}
-              currentTimeframe={timeframe}
-            />
-
-            {/* 2-column row: AI Recommendation + Sentiment */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-              <AIRecommendationCard
-                ticker={ticker}
-                data={dashboard?.recommendation as any ?? null}
-                loading={loadingDash}
-              />
-              <SentimentPanel
-                data={sentiment}
-                loading={loadingDash}
-              />
+          <div style={{ gridArea: "tabs" }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              {[
+                { key: "technical", label: "Technical Indicators" },
+                { key: "news", label: "News" },
+                { key: "fundamentals", label: "Fundamentals" },
+                { key: "portfolio", label: "Portfolio" },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => setTab(item.key)}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: tab === item.key ? "rgba(0,255,65,0.12)" : "rgba(255,255,255,0.04)",
+                    color: tab === item.key ? "#00ff41" : "#9ca3af",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
 
-            {/* Market Stats + Technical Indicators */}
-            <MarketStats
-              price={dashboard?.price as any ?? null}
-              meta={dashboard?.metadata ?? null}
-              technicals={technicals}
-              loading={loadingDash}
-            />
-
-            <TechnicalIndicatorsPanel
-              data={technicals}
-              loading={loadingDash}
-            />
-
-            {/* News */}
-            <NewsSection
-              ticker={ticker}
-              articles={news as any[]}
-              loading={loadingNews}
-            />
-
-          </div>
-
-          {/* ── RIGHT SIDEBAR: Watchlist ─────────────────────────────────── */}
-          <div style={{ position: "sticky", top: "90px" }}>
-            <WatchlistPanel activeTicker={ticker} />
-
-            {/* Quick actions */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              style={{
-                marginTop: "16px",
-                background: "rgba(17, 24, 39, 0.85)",
-                backdropFilter: "blur(20px)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "1.5rem",
-                padding: "20px",
-              }}
-            >
-              <p style={{ fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(148,163,184,0.5)", margin: "0 0 14px" }}>
-                Quick Links
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {["NVDA", "AAPL", "TSLA", "MSFT", "AMZN"].filter((s) => s !== ticker).slice(0, 4).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => router.push(`/stocks/${s}`)}
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      borderRadius: "10px",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                      background: "rgba(255,255,255,0.03)",
-                      color: "rgba(199,211,255,0.8)",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: 500,
-                      textAlign: "left",
-                      transition: "all 0.2s",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                    }}
-                  >
-                    <span style={{ width: "28px", height: "28px", borderRadius: "6px", background: "rgba(10,132,255,0.12)", border: "1px solid rgba(10,132,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", fontWeight: 700, color: "#0a84ff", flexShrink: 0 }}>
-                      {s.slice(0, 2)}
-                    </span>
-                    {s}
-                  </button>
-                ))}
+            {tab === "technical" && (
+              <div style={{ display: "grid", gap: 16 }}>
+                <MarketStats price={dashboard?.price as any ?? null} meta={dashboard?.metadata ?? null} technicals={technicals} loading={loadingDash} />
+                <TechnicalIndicatorsPanel data={technicals} loading={loadingDash} />
               </div>
-            </motion.div>
+            )}
+            {tab === "news" && (
+              <NewsSection ticker={ticker} articles={news as any[]} loading={loadingNews} />
+            )}
+            {tab === "fundamentals" && (
+              <div style={{ padding: 20, borderRadius: 16, background: "#0f1629", border: "1px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                Fundamentals panel coming soon. Use the Company Overview for key metrics.
+              </div>
+            )}
+            {tab === "portfolio" && (
+              <div style={{ padding: 20, borderRadius: 16, background: "#0f1629", border: "1px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                Portfolio integration coming soon. Add this symbol from the Portfolio page.
+              </div>
+            )}
           </div>
-
         </div>
       </div>
 
       {/* Responsive overrides */}
       <style>{`
         @media (max-width: 1024px) {
-          div[style*="gridTemplateColumns: 1fr 280px"] {
+          div[style*="gridTemplateAreas: \"chart sidebar\" \"tabs tabs\""] {
             grid-template-columns: 1fr !important;
-          }
-          div[style*="gridTemplateColumns: 1fr 1fr"] {
-            grid-template-columns: 1fr !important;
+            grid-template-areas: "chart" "sidebar" "tabs" !important;
           }
         }
         @media (max-width: 640px) {

@@ -109,6 +109,12 @@ export default function StockSearchBar({ placeholder = "Search ticker or company
     Utilities: "#84cc16",
     ETF: "#64748b",
     Cryptocurrency: "#f97316",
+    PSX: "#00ff41",
+    US: "#3b82f6",
+    CRYPTO: "#f59e0b",
+    FOREX: "#14b8a6",
+    COMMODITIES: "#f97316",
+    INDICES: "#eab308",
   };
 
   return (
@@ -244,8 +250,8 @@ export default function StockSearchBar({ placeholder = "Search ticker or company
                 <p style={{ fontWeight: 600, fontSize: "14px", color: "#dae2fd", margin: 0, fontFamily: "var(--font-body)" }}>{r.symbol}</p>
                 <p style={{ fontSize: "12px", color: "rgba(148,163,184,0.8)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</p>
               </div>
-              <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "10px", background: `${sectorColor[r.sector] || "#64748b"}20`, color: sectorColor[r.sector] || "#64748b", border: `1px solid ${sectorColor[r.sector] || "#64748b"}40`, flexShrink: 0, whiteSpace: "nowrap" }}>
-                {r.sector}
+              <span style={{ padding: "2px 8px", borderRadius: "9999px", fontSize: "10px", background: `${sectorColor[r.sector || r.market || "US"] || "#64748b"}20`, color: sectorColor[r.sector || r.market || "US"] || "#64748b", border: `1px solid ${sectorColor[r.sector || r.market || "US"] || "#64748b"}40`, flexShrink: 0, whiteSpace: "nowrap" }}>
+                {r.sector || r.market || "US"}
               </span>
             </button>
           ))}

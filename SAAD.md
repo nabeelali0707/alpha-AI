@@ -1,6 +1,6 @@
 # AlphaAI - Development Summary Document (SAAD)
 
-**Date:** May 15, 2026  
+**Date:** May 16, 2026  
 **Project:** AlphaAI - AI-Powered Stock Market Analyzer  
 **Version:** 1.0 (MVP)
 
@@ -8,7 +8,27 @@
 
 ## 📋 Executive Summary
 
-This document provides a comprehensive overview of all development work completed on AlphaAI, including bug fixes, feature implementations, UI enhancements, and deployment configuration. The application combines real-time stock data, AI sentiment analysis, technical indicators, and personalized recommendations in a premium fintech dashboard.
+This document provides a comprehensive overview of all development work completed on AlphaAI, including bug fixes, feature implementations, UI enhancements, and deployment configuration. The application now combines live crypto, forex, commodities, and stock data with AI sentiment analysis, technical indicators, and personalized recommendations in a premium fintech dashboard.
+
+## 🔄 Recent Live Market Upgrade
+
+The frontend is now wired to the backend live market routes for real-time market data. The `/markets` page, ticker tape, and market helpers now consume live backend data for crypto, forex, commodities, and stock history.
+
+What changed in the latest pass:
+- Added shared live API types and mappers in `frontend/src/lib/api.ts`
+- Connected `getMarketOverview()` to `/live/crypto/all`, `/live/forex/all`, and `/live/commodity/all`
+- Rebuilt `TradingViewChart` to load live overview data and backend history
+- Simplified `/markets` to render the TradingView-style component directly
+- Fixed `lightweight-charts` type mismatches so the frontend production build passes again
+- Removed synthetic fallback news headlines from the backend so news endpoints now return live articles or an empty list
+
+Important note:
+- The app is live-data driven, and the current source no longer keeps synthetic market payloads in the main runtime flow.
+- When an upstream API is temporarily unavailable, the UI now prefers empty-state rendering instead of mock market data.
+
+Runtime status:
+- Backend server running on `http://127.0.0.1:8001`
+- Frontend dev server running on `http://localhost:3000`
 
 ---
 
@@ -59,6 +79,24 @@ This document provides a comprehensive overview of all development work complete
 - Backend moved from port 8000 to 8001 due to stale process holders
 - Updated frontend `.env` to `NEXT_PUBLIC_ALPHAAI_API_BASE_URL="http://localhost:8001/api/v1"`
 - Both backend and frontend configurations updated for consistency
+
+### 1b. **Live Market Data Integration**
+
+#### New Backend Live Routes
+- Added real-time endpoints for crypto, forex, and commodities under `/api/v1/live`
+- Crypto data comes from CoinGecko without an API key
+- Forex data uses ExchangeRate-API and includes PKR pairs
+- Commodities use yfinance-based market data for gold, oil, and related instruments
+
+#### Frontend Live Wiring
+- `frontend/src/lib/api.ts` now maps live market payloads into the existing app-wide market model
+- `frontend/src/components/TradingViewChart.tsx` fetches live market overview data and backend history
+- `frontend/src/app/markets/page.tsx` now acts as a thin wrapper over the TradingView component
+- `frontend/src/components/TickerTape.tsx` and assistant flows continue to use the shared market overview helper, which now includes live market data
+
+#### Build Validation
+- Fixed chart type mismatches in `frontend/src/components/StockChart.tsx`
+- Verified frontend production build with `npm run build` succeeds
 
 ### 2. **Frontend Animations & Responsive Design**
 

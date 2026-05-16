@@ -1,20 +1,41 @@
 import Image from "next/image";
 import Link from "next/link";
 
+const features = [
+  {
+    icon: "◈",
+    title: "Neural Sentiment",
+    copy: "Real-time analysis of global news, social threads, and earnings calls using proprietary LLMs.",
+    color: "var(--primary)",
+  },
+  {
+    icon: "⌬",
+    title: "Predictive Telemetry",
+    copy: "Quantitative models that identify alpha before it hits the mainstream tape.",
+    color: "var(--tertiary)",
+  },
+  {
+    icon: "⧖",
+    title: "Risk Shield",
+    copy: "Advanced volatility hedging and exposure management to protect your capital.",
+    color: "var(--secondary)",
+  },
+];
+
 export default function Home() {
   return (
     <div className="container">
-      {/* Hero Section */}
-      <section style={{ 
-        padding: 'var(--spacing-xl) 0', 
-        display: 'grid', 
-        gridTemplateColumns: '1fr 1fr', 
-        gap: 'var(--spacing-xl)', 
+      <section style={{
+        padding: 'var(--spacing-xl) 0',
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 'var(--spacing-xl)',
         alignItems: 'center',
-        minHeight: '80vh'
+        minHeight: '80vh',
+        position: 'relative',
       }}>
         <div>
-          <span className="data-mono" style={{ color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.2em', display: 'block', marginBottom: 'var(--spacing-sm)' }}>
+          <span className="data-mono animate-glow-pulse" style={{ color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.2em', display: 'block', marginBottom: 'var(--spacing-sm)' }}>
             Neural Core v2.4 Active
           </span>
           <h1 className="headline-xl" style={{ marginBottom: 'var(--spacing-md)' }}>
@@ -32,12 +53,16 @@ export default function Home() {
             </Link>
           </div>
         </div>
-        <div className="glass" style={{ padding: 'var(--spacing-xs)', overflow: 'hidden', position: 'relative' }}>
+        <div className="glass animate-float-slow" style={{ padding: 'var(--spacing-xs)', overflow: 'hidden', position: 'relative' }}>
+          <span className="hero-orb one" />
+          <span className="hero-orb two" />
+          <span className="hero-orb three" />
           <Image 
             src="/hero.png" 
             alt="AlphaAI Dashboard" 
             width={800} 
             height={600} 
+            loading="eager"
             style={{ width: '100%', height: 'auto', borderRadius: 'var(--radius-lg)' }}
           />
           <div style={{ 
@@ -55,25 +80,20 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Features Grid */}
       <section style={{ padding: 'var(--spacing-xl) 0' }}>
         <h2 className="headline-lg" style={{ textAlign: 'center', marginBottom: 'var(--spacing-xl)' }}>Institutional Power. Personal Access.</h2>
         <div className="grid-dashboard">
-          <div className="glass-card" style={{ gridColumn: 'span 4', padding: 'var(--spacing-md)' }}>
-            <div style={{ color: 'var(--primary)', fontSize: '32px', marginBottom: 'var(--spacing-sm)' }}>◈</div>
-            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>Neural Sentiment</h3>
-            <p style={{ opacity: 0.7 }}>Real-time analysis of global news, social threads, and earnings calls using proprietary LLMs.</p>
-          </div>
-          <div className="glass-card" style={{ gridColumn: 'span 4', padding: 'var(--spacing-md)' }}>
-            <div style={{ color: 'var(--tertiary)', fontSize: '32px', marginBottom: 'var(--spacing-sm)' }}>⌬</div>
-            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>Predictive Telemetry</h3>
-            <p style={{ opacity: 0.7 }}>Quantitative models that identify alpha before it hits the mainstream tape.</p>
-          </div>
-          <div className="glass-card" style={{ gridColumn: 'span 4', padding: 'var(--spacing-md)' }}>
-            <div style={{ color: 'var(--secondary)', fontSize: '32px', marginBottom: 'var(--spacing-sm)' }}>⧖</div>
-            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>Risk Shield</h3>
-            <p style={{ opacity: 0.7 }}>Advanced volatility hedging and exposure management to protect your capital.</p>
-          </div>
+          {features.map((feature) => (
+            <div
+              key={feature.title}
+              className="glass-card animate-float-slow"
+              style={{ gridColumn: 'span 4', padding: 'var(--spacing-md)' }}
+            >
+              <div style={{ color: feature.color, fontSize: '32px', marginBottom: 'var(--spacing-sm)' }}>{feature.icon}</div>
+              <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>{feature.title}</h3>
+              <p style={{ opacity: 0.7 }}>{feature.copy}</p>
+            </div>
+          ))}
         </div>
       </section>
     </div>

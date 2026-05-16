@@ -12,7 +12,7 @@ Endpoints:
 import asyncio
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from models.stock import (
     SentimentResult,
@@ -27,6 +27,8 @@ from services.recommender import RecommenderService
 from services.technical_service import TechnicalService
 from services.news_service import NewsService
 from services.stock_service import StockService
+from services.urdu_service import UrduService
+from utils.limiter import limiter
 
 router = APIRouter()
 sentiment_service = SentimentService()
@@ -146,7 +148,8 @@ async def get_stock_news(symbol: str):
         404: {"model": ErrorResponse, "description": "Ticker not found"},
     },
 )
-async def get_dashboard(symbol: str):
+@limiter.limit("10/minute")
+async def get_dashboard(request: Request, symbol: str):
     """
     Assemble a complete dashboard view for a single ticker.
     Combines all available data into one frontend-ready response.
@@ -202,3 +205,39 @@ async def get_dashboard(symbol: str):
         "recommendation": recommendation,
         "technical_indicators": technicals,
     }
+
+
+# ── Urdu Translation & Localization ────────────────────────────────────────
+
+@router.get(
+    "/urdu/translate",
+    summary="Translate financial term to Urdu",
+    description="Translate English financial terms to Urdu for Pakistani investors.",
+)
+async def translate_to_urdu(term: str):
+    """Translate a financial term to Urdu"""
+    urdu_term = UrduService.translate_term(term)
+    return {"term": term, "urdu_translation": urdu_term}
+
+
+@router.get(
+    "/urdu/recommend/{symbol}",
+    summary="Get Urdu recommendation",
+    description="Get AI recommendation with Urdu explanation for Pakistani users",
+)
+async def get_urdu_recommendation(symbol: str):
+    """Get recommendation with Urdu explanation"""
+    try:
+        recommendation = await recommender_service.generate_recommendation(symbol)
+        urdu_explanation = UrduService.translate_recommendation(recommendation)
+        
+        return {
+            "symbol": symbol.upper(),
+            "signal": recommendation.get("signal"),
+            "confidence": recommendation.get("confidence"),
+            "urdu_explanation": urdu_explanation,
+            "reasons": recommendation.get("reasons"),
+        }
+    except Exception as e:
+        logger.error(f"Error generating Urdu recommendation: {e}")
+        return {"error": "اسٹاک کی تجویز بنانے میں خرابی"}

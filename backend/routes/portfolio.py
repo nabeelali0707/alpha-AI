@@ -1,149 +1,120 @@
 """
 Portfolio Management Routes
-Handles watchlists, holdings, and P&L calculations
+Handles Supabase-backed holdings and P&L calculations
 """
 
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-from typing import List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from models.stock import PortfolioHoldingCreate, PortfolioHoldingResponse, PortfolioSummaryResponse
+from services.stock_service import StockService
+from utils.auth import get_current_user
+from utils.supabase_client import get_supabase_client
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+stock_service = StockService()
 
-# Models
-class WatchlistItem(BaseModel):
-    symbol: str
-    added_at: Optional[datetime] = None
 
-class PortfolioHolding(BaseModel):
-    symbol: str
-    quantity: float
-    entry_price: float
-    entry_date: datetime
-    current_price: Optional[float] = None
-    pnl: Optional[float] = None
-    pnl_percent: Optional[float] = None
+def _require_supabase():
+    client = get_supabase_client()
+    if client is None:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+    return client
 
-class PortfolioSummary(BaseModel):
-    total_value: float
-    total_invested: float
-    total_pnl: float
-    total_pnl_percent: float
-    holdings: List[PortfolioHolding]
 
-class Watchlist(BaseModel):
-    user_id: str
-    items: List[WatchlistItem]
-    updated_at: datetime
+@router.post("/holdings", response_model=PortfolioHoldingResponse)
+async def add_holding(payload: PortfolioHoldingCreate, user: dict = Depends(get_current_user)):
+    client = _require_supabase()
+    user_id = user.get("id")
 
-# In-memory storage (replace with database in production)
-_portfolios = {}
-_watchlists = {}
+    entry_date = payload.entry_date or datetime.now().isoformat()
+    data = {
+        "user_id": user_id,
+        "symbol": payload.symbol.upper(),
+        "quantity": payload.quantity,
+        "entry_price": payload.entry_price,
+        "entry_date": entry_date,
+        "notes": payload.notes,
+        "market": payload.market or "US",
+    }
 
-@router.post("/watchlist/add")
-async def add_to_watchlist(user_id: str = Query(...), symbol: str = Query(...)):
-    """Add symbol to user watchlist"""
-    if user_id not in _watchlists:
-        _watchlists[user_id] = []
-    
-    if not any(item.symbol == symbol for item in _watchlists[user_id]):
-        _watchlists[user_id].append(WatchlistItem(symbol=symbol, added_at=datetime.now()))
-    
-    return {"status": "success", "message": f"Added {symbol} to watchlist"}
+    result = client.table("portfolio_holdings").insert(data).execute()
+    if not result.data:
+        raise HTTPException(status_code=400, detail="Failed to add holding")
 
-@router.get("/watchlist", response_model=Watchlist)
-async def get_watchlist(user_id: str = Query(...)):
-    """Get user watchlist"""
-    if user_id not in _watchlists:
-        return Watchlist(
-            user_id=user_id,
-            items=[],
-            updated_at=datetime.now()
-        )
-    
-    return Watchlist(
-        user_id=user_id,
-        items=_watchlists[user_id],
-        updated_at=datetime.now()
-    )
+    record = result.data[0]
+    return PortfolioHoldingResponse(**record)
 
-@router.post("/watchlist/remove")
-async def remove_from_watchlist(user_id: str = Query(...), symbol: str = Query(...)):
-    """Remove symbol from user watchlist"""
-    if user_id in _watchlists:
-        _watchlists[user_id] = [
-            item for item in _watchlists[user_id] 
-            if item.symbol != symbol
-        ]
-    
-    return {"status": "success", "message": f"Removed {symbol} from watchlist"}
 
-@router.post("/holding/add")
-async def add_holding(
-    user_id: str = Query(...),
-    symbol: str = Query(...),
-    quantity: float = Query(...),
-    entry_price: float = Query(...),
-):
-    """Add holding to portfolio"""
-    if user_id not in _portfolios:
-        _portfolios[user_id] = []
-    
-    # Check if already exists
-    for holding in _portfolios[user_id]:
-        if holding.symbol == symbol:
-            # Update quantity and recalculate average price
-            old_value = holding.quantity * holding.entry_price
-            new_value = quantity * entry_price
-            total_value = old_value + new_value
-            total_quantity = holding.quantity + quantity
-            holding.entry_price = total_value / total_quantity if total_quantity > 0 else 0
-            holding.quantity = total_quantity
-            return {"status": "success", "message": f"Updated {symbol} holding"}
-    
-    _portfolios[user_id].append(
-        PortfolioHolding(
-            symbol=symbol,
-            quantity=quantity,
-            entry_price=entry_price,
-            entry_date=datetime.now(),
-        )
-    )
-    
-    return {"status": "success", "message": f"Added {symbol} holding"}
+@router.get("/holdings", response_model=List[PortfolioHoldingResponse])
+async def get_holdings(user: dict = Depends(get_current_user)):
+    client = _require_supabase()
+    user_id = user.get("id")
 
-@router.get("/holdings", response_model=List[PortfolioHolding])
-async def get_holdings(user_id: str = Query(...)):
-    """Get user portfolio holdings"""
-    return _portfolios.get(user_id, [])
+    result = client.table("portfolio_holdings").select("*").eq("user_id", user_id).execute()
+    holdings = result.data or []
 
-@router.get("/summary", response_model=PortfolioSummary)
-async def get_portfolio_summary(user_id: str = Query(...)):
-    """Get portfolio summary with P&L calculations"""
-    holdings = _portfolios.get(user_id, [])
-    
-    # Calculate totals
+    # Fetch current prices in parallel
+    priced = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_map = {
+            executor.submit(stock_service.get_stock_price, h["symbol"]): h for h in holdings
+        }
+        for future in as_completed(future_map):
+            holding = future_map[future]
+            price_data = future.result()
+            current_price = float(price_data.get("price") or 0)
+            quantity = float(holding.get("quantity") or 0)
+            entry_price = float(holding.get("entry_price") or 0)
+            pnl = (current_price - entry_price) * quantity
+            pnl_percent = (pnl / (entry_price * quantity) * 100) if entry_price and quantity else 0
+
+            priced.append(
+                PortfolioHoldingResponse(
+                    id=holding["id"],
+                    symbol=holding["symbol"],
+                    quantity=quantity,
+                    entry_price=entry_price,
+                    entry_date=str(holding.get("entry_date")),
+                    notes=holding.get("notes"),
+                    market=holding.get("market"),
+                    current_price=round(current_price, 2),
+                    pnl=round(pnl, 2),
+                    pnl_percent=round(pnl_percent, 2),
+                )
+            )
+
+    return priced
+
+
+@router.delete("/holdings/{holding_id}")
+async def remove_holding(holding_id: str, user: dict = Depends(get_current_user)):
+    client = _require_supabase()
+    user_id = user.get("id")
+
+    result = client.table("portfolio_holdings").delete().eq("id", holding_id).eq("user_id", user_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Holding not found")
+
+    return {"status": "success", "message": "Holding removed"}
+
+
+@router.get("/summary", response_model=PortfolioSummaryResponse)
+async def get_portfolio_summary(user: dict = Depends(get_current_user)):
+    holdings = await get_holdings(user)
+
     total_invested = sum(h.quantity * h.entry_price for h in holdings)
-    # Note: current_price should be fetched from stock service
-    total_value = total_invested  # Placeholder
+    total_value = sum((h.current_price or 0) * h.quantity for h in holdings)
     total_pnl = total_value - total_invested
     total_pnl_percent = (total_pnl / total_invested * 100) if total_invested > 0 else 0
-    
-    return PortfolioSummary(
-        total_value=total_value,
-        total_invested=total_invested,
-        total_pnl=total_pnl,
-        total_pnl_percent=total_pnl_percent,
+
+    return PortfolioSummaryResponse(
+        total_value=round(total_value, 2),
+        total_invested=round(total_invested, 2),
+        total_pnl=round(total_pnl, 2),
+        total_pnl_percent=round(total_pnl_percent, 2),
         holdings=holdings,
     )
-
-@router.post("/holding/remove")
-async def remove_holding(user_id: str = Query(...), symbol: str = Query(...)):
-    """Remove holding from portfolio"""
-    if user_id in _portfolios:
-        _portfolios[user_id] = [
-            h for h in _portfolios[user_id]
-            if h.symbol != symbol
-        ]
-    
-    return {"status": "success", "message": f"Removed {symbol} holding"}

@@ -25,7 +25,8 @@ export const alphaaiApi = axios.create({
 export type SearchResult = {
   symbol: string;
   name: string;
-  sector: string;
+  sector?: string;
+  market?: string;
 };
 
 export type StockPrice = {
@@ -84,6 +85,16 @@ export type TechnicalIndicators = {
   volatility: {
     risk_level: string;
   };
+  bollinger_bands?: Record<string, unknown> | null;
+  rsi_series?: { date: string; value: number }[];
+  macd_series?: { date: string; value: number }[];
+  sma_20_series?: { date: string; value: number }[];
+  sma_50_series?: { date: string; value: number }[];
+  bollinger_series?: {
+    upper: { date: string; value: number }[];
+    middle: { date: string; value: number }[];
+    lower: { date: string; value: number }[];
+  };
 };
 
 export type Recommendation = {
@@ -92,10 +103,85 @@ export type Recommendation = {
   confidence: number;
   score: number;
   explanation: string;
+  urdu_explanation?: string | null;
   reasons: string[];
   technical_indicators?: TechnicalIndicators | null;
   sentiment_summary?: SentimentSummary | null;
   price_data?: StockPrice | null;
+};
+
+export type MarketItem = {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  change_percent: number;
+  volume?: number | null;
+};
+
+export type LiveCryptoMarketItem = {
+  symbol: string;
+  name: string;
+  price: number;
+  market_cap: number;
+  market_cap_rank?: number | null;
+  volume_24h: number;
+  change_24h: number;
+  image?: string;
+  timestamp: string;
+};
+
+export type LiveForexMarketItem = {
+  pair: string;
+  base: string;
+  quote: string;
+  rate: number;
+  timestamp: string;
+  source?: string;
+};
+
+export type LiveCommodityMarketItem = {
+  symbol: string;
+  name: string;
+  unit: string;
+  price: number;
+  high: number;
+  low: number;
+  volume: number;
+  change: number;
+  change_pct: number;
+  timestamp: string;
+  source?: string;
+};
+
+export type MarketOverview = {
+  PSX: MarketItem[];
+  US: MarketItem[];
+  CRYPTO: MarketItem[];
+  FOREX: MarketItem[];
+  COMMODITIES: MarketItem[];
+  INDICES: MarketItem[];
+};
+
+export type PortfolioHolding = {
+  id: string;
+  symbol: string;
+  quantity: number;
+  entry_price: number;
+  entry_date: string;
+  notes?: string | null;
+  market?: string | null;
+  current_price?: number | null;
+  pnl?: number | null;
+  pnl_percent?: number | null;
+};
+
+export type PortfolioSummary = {
+  total_value: number;
+  total_invested: number;
+  total_pnl: number;
+  total_pnl_percent: number;
+  holdings: PortfolioHolding[];
 };
 
 export type NewsArticle = {
@@ -148,6 +234,11 @@ export async function getRecommendation(ticker: string) {
   return response.data;
 }
 
+export async function getRecommendations() {
+  const response = await alphaaiApi.get<Recommendation[]>("/analysis/recommendations");
+  return response.data;
+}
+
 export async function getTechnicalIndicators(ticker: string) {
   const response = await alphaaiApi.get(`/analysis/technical/${ticker}`);
   return response.data;
@@ -158,8 +249,112 @@ export async function getDashboard(ticker: string) {
   return response.data;
 }
 export async function searchStocks(query: string, limit = 8) {
-  const response = await alphaaiApi.get<SearchResult[]>(`/search/${encodeURIComponent(query)}`, {
-    params: { limit },
+  const response = await alphaaiApi.get<SearchResult[]>(`/stocks/search/autocomplete`, {
+    params: { q: query, limit },
+  });
+  return response.data;
+}
+
+function mapLiveCryptoToMarketItem(coin: LiveCryptoMarketItem): MarketItem {
+  const changePercent = coin.change_24h ?? 0;
+  const change = coin.price && changePercent ? (coin.price * changePercent) / 100 : 0;
+  return {
+    symbol: coin.symbol,
+    name: coin.name,
+    price: coin.price,
+    change,
+    change_percent: changePercent,
+    volume: coin.volume_24h ?? null,
+  };
+}
+
+function mapLiveForexToMarketItem(pair: LiveForexMarketItem): MarketItem {
+  return {
+    symbol: pair.pair,
+    name: `${pair.base}/${pair.quote}`,
+    price: pair.rate,
+    change: 0,
+    change_percent: 0,
+    volume: null,
+  };
+}
+
+function mapLiveCommodityToMarketItem(commodity: LiveCommodityMarketItem): MarketItem {
+  return {
+    symbol: commodity.symbol,
+    name: commodity.name,
+    price: commodity.price,
+    change: commodity.change,
+    change_percent: commodity.change_pct,
+    volume: commodity.volume,
+  };
+}
+
+export async function getMarketOverview(): Promise<MarketOverview> {
+  const response = await alphaaiApi.get<MarketOverview>("/stocks/market/overview");
+  return response.data;
+}
+
+export async function getPSXStocks(): Promise<MarketItem[]> {
+  const response = await alphaaiApi.get<MarketItem[]>("/stocks/market/psx");
+  return response.data;
+}
+
+export async function getCryptoMarket(): Promise<MarketItem[]> {
+  const response = await alphaaiApi.get<LiveCryptoMarketItem[]>("/live/crypto/all", {
+    params: { currency: "usd", limit: 12 },
+  });
+  return (response.data ?? []).map((coin) => ({
+    symbol: coin.symbol,
+    name: coin.name,
+    price: coin.price,
+    change: Number(((coin.price ?? 0) * ((coin.change_24h ?? 0) / 100)).toFixed(2)),
+    change_percent: coin.change_24h ?? 0,
+    volume: coin.volume_24h ?? 0,
+  }));
+}
+
+export async function getForexMarket(): Promise<MarketItem[]> {
+  const response = await alphaaiApi.get<Array<{ pair: string; base: string; quote: string; rate: number }>>("/live/forex/all");
+  return (response.data ?? []).map((item) => ({
+    symbol: item.pair,
+    name: item.pair,
+    price: item.rate,
+    change: 0,
+    change_percent: 0,
+    volume: null,
+  }));
+}
+
+export async function getCommodityMarket(): Promise<MarketItem[]> {
+  const response = await alphaaiApi.get<LiveCommodityMarketItem[]>("/live/commodity/all");
+  return (response.data ?? []).map(mapLiveCommodityToMarketItem);
+}
+
+export async function getPortfolioHoldings(token: string): Promise<PortfolioHolding[]> {
+  const response = await alphaaiApi.get<PortfolioHolding[]>("/portfolio/holdings", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}
+
+export async function addPortfolioHolding(token: string, payload: Omit<PortfolioHolding, "id">) {
+  const response = await alphaaiApi.post<PortfolioHolding>("/portfolio/holdings", payload, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}
+
+export async function removePortfolioHolding(token: string, id: string) {
+  const response = await alphaaiApi.delete(`/portfolio/holdings/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}
+
+export async function getPortfolioSummary(token: string): Promise<PortfolioSummary> {
+  const response = await alphaaiApi.get<PortfolioSummary>("/portfolio/summary", {
+    headers: { Authorization: `Bearer ${token}` },
   });
   return response.data;
 }

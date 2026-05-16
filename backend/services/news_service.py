@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 def _cached_stock_news(ticker: str, max_articles: int, days_back: int, api_key: str) -> List[Dict[str, Any]]:
     """Cached NewsAPI fetch to reduce repeated external calls for the same ticker."""
     if not api_key or api_key == "your_newsapi_key_here":
-        return NewsService._fallback_headlines(ticker)
+        return []
 
     from_date = (datetime.utcnow() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     to_date = datetime.utcnow().strftime("%Y-%m-%d")
@@ -40,7 +40,7 @@ def _cached_stock_news(ticker: str, max_articles: int, days_back: int, api_key: 
     if response.status_code == 401:
         raise HTTPException(status_code=401, detail="NewsAPI key is invalid.")
     if response.status_code == 429:
-        return NewsService._fallback_headlines(ticker)
+        return []
 
     response.raise_for_status()
     data = response.json()
@@ -55,7 +55,7 @@ def _cached_stock_news(ticker: str, max_articles: int, days_back: int, api_key: 
             "description": article.get("description", ""),
         })
 
-    return articles or NewsService._fallback_headlines(ticker)
+    return articles
 
 
 class NewsService:
@@ -90,52 +90,7 @@ class NewsService:
             raise
         except requests.exceptions.Timeout:
             logger.error(f"NewsAPI request timed out for {ticker}")
-            return self._fallback_headlines(ticker)
+            return []
         except Exception as e:
             logger.error(f"Failed to fetch news for {ticker}: {e}")
-            return self._fallback_headlines(ticker)
-
-    @staticmethod
-    def _fallback_headlines(ticker: str) -> List[Dict[str, Any]]:
-        """
-        Returns realistic placeholder headlines when NewsAPI is unavailable.
-        This ensures the sentiment pipeline never breaks.
-        """
-        now = datetime.utcnow().isoformat() + "Z"
-        return [
-            {
-                "headline": f"{ticker} reports strong quarterly earnings, beating analyst expectations",
-                "source": "Financial Times",
-                "url": "",
-                "published_date": now,
-                "description": f"Latest earnings report for {ticker} shows growth.",
-            },
-            {
-                "headline": f"Analysts upgrade {ticker} stock amid positive market outlook",
-                "source": "Bloomberg",
-                "url": "",
-                "published_date": now,
-                "description": f"Wall Street analysts raise price targets for {ticker}.",
-            },
-            {
-                "headline": f"Market volatility impacts {ticker} amid global uncertainty",
-                "source": "Reuters",
-                "url": "",
-                "published_date": now,
-                "description": f"Global economic conditions weigh on {ticker} stock.",
-            },
-            {
-                "headline": f"{ticker} announces new strategic partnership for growth expansion",
-                "source": "CNBC",
-                "url": "",
-                "published_date": now,
-                "description": f"{ticker} expands operations through new partnerships.",
-            },
-            {
-                "headline": f"Institutional investors increase holdings in {ticker} shares",
-                "source": "MarketWatch",
-                "url": "",
-                "published_date": now,
-                "description": f"Major funds add {ticker} positions this quarter.",
-            },
-        ]
+            return []

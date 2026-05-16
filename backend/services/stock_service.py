@@ -1,7 +1,101 @@
-import pandas as pd
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from functools import lru_cache
 from typing import Dict, List, Any, Optional
+
+import pandas as pd
+from cachetools import TTLCache
 from fastapi import HTTPException
+
+logger = logging.getLogger("alphaai.stock_service")
+
+PRICE_CACHE = TTLCache(maxsize=500, ttl=30)
+HISTORY_CACHE = TTLCache(maxsize=200, ttl=300)
+INFO_CACHE = TTLCache(maxsize=500, ttl=3600)
+MARKET_CACHE = TTLCache(maxsize=1, ttl=60)
+AUTOCOMPLETE_CACHE = TTLCache(maxsize=200, ttl=300)
+
+MARKET_TICKERS = {
+    "PSX": {
+        "ENGRO.KA": "Engro Corporation",
+        "HBL.KA": "Habib Bank",
+        "LUCK.KA": "Lucky Cement",
+        "OGDC.KA": "Oil & Gas Dev Corp",
+        "PPL.KA": "Pakistan Petroleum",
+        "PSO.KA": "Pakistan State Oil",
+        "MCB.KA": "MCB Bank",
+        "UBL.KA": "United Bank",
+        "HUBC.KA": "Hub Power",
+        "KEL.KA": "K-Electric",
+        "PAKT.KA": "Pakistan Tobacco",
+        "SEARL.KA": "Searle Pakistan",
+        "TRG.KA": "TRG Pakistan",
+        "SYS.KA": "Systems Ltd",
+        "NETSOL.KA": "NetSol Technologies",
+    },
+    "US": {
+        "AAPL": "Apple",
+        "MSFT": "Microsoft",
+        "NVDA": "NVIDIA",
+        "GOOGL": "Alphabet",
+        "AMZN": "Amazon",
+        "META": "Meta",
+        "TSLA": "Tesla",
+        "AMD": "AMD",
+        "PLTR": "Palantir",
+        "NFLX": "Netflix",
+        "UBER": "Uber",
+        "SPOT": "Spotify",
+    },
+    "CRYPTO": {
+        "BTC-USD": "Bitcoin",
+        "ETH-USD": "Ethereum",
+        "BNB-USD": "BNB",
+        "SOL-USD": "Solana",
+        "ADA-USD": "Cardano",
+        "XRP-USD": "XRP",
+        "DOGE-USD": "Dogecoin",
+        "MATIC-USD": "Polygon",
+        "LINK-USD": "Chainlink",
+        "LTC-USD": "Litecoin",
+        "BCH-USD": "Bitcoin Cash",
+        "XLM-USD": "Stellar",
+    },
+    "FOREX": {
+        "PKR=X": "USD/PKR",
+        "EURUSD=X": "EUR/USD",
+        "GBPUSD=X": "GBP/USD",
+        "JPYUSD=X": "JPY/USD",
+        "CHFUSD=X": "CHF/USD",
+        "AUDUSD=X": "AUD/USD",
+        "CADUSD=X": "CAD/USD",
+        "INRUSD=X": "INR/USD",
+        "SGDUSD=X": "SGD/USD",
+        "HKDUSD=X": "HKD/USD",
+    },
+    "COMMODITIES": {
+        "GC=F": "Gold",
+        "SI=F": "Silver",
+        "CL=F": "Crude Oil",
+        "NG=F": "Natural Gas",
+        "ZW=F": "Wheat",
+        "ZC=F": "Corn",
+        "CC=F": "Cocoa",
+        "CT=F": "Cotton",
+    },
+    "INDICES": {
+        "^GSPC": "S&P 500",
+        "^DJI": "Dow Jones",
+        "^IXIC": "NASDAQ",
+        "^FTSE": "FTSE 100",
+        "^N225": "Nikkei 225",
+        "^HSI": "Hang Seng",
+        "^AORD": "ASX 200",
+        "^KS11": "KOSPI",
+    },
+}
 
 class StockService:
     @staticmethod
@@ -10,6 +104,11 @@ class StockService:
         Fetches the current market price and 24h change for a given ticker.
         """
         try:
+            cache_key = ticker.upper()
+            cached = PRICE_CACHE.get(cache_key)
+            if cached:
+                return cached
+
             try:
                 import yfinance as yf
             except Exception:
@@ -65,14 +164,15 @@ class StockService:
 
             change = float(price) - float(prev_close)
             change_percent = (change / float(prev_close)) * 100 if prev_close else 0
-
-            return {
+            payload = {
                 "symbol": ticker.upper(),
                 "price": round(float(price), 2),
                 "change": round(float(change), 2),
                 "change_percent": round(float(change_percent), 2),
                 "timestamp": datetime.now().isoformat()
             }
+            PRICE_CACHE[cache_key] = payload
+            return payload
         except Exception:
             return {
                 "symbol": ticker.upper(),
@@ -89,6 +189,11 @@ class StockService:
         Periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
         """
         try:
+            cache_key = f"{ticker.upper()}|{period}|{interval}"
+            cached = HISTORY_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
+
             try:
                 import yfinance as yf
             except Exception:
@@ -114,6 +219,7 @@ class StockService:
                     "close": round(float(row['Close']), 2),
                     "volume": int(row['Volume'])
                 })
+            HISTORY_CACHE[cache_key] = data
             return data
         except Exception:
             return []
@@ -124,6 +230,11 @@ class StockService:
         Fetches comprehensive company metadata and fundamentals.
         """
         try:
+            cache_key = ticker.upper()
+            cached = INFO_CACHE.get(cache_key)
+            if cached is not None:
+                return cached
+
             try:
                 import yfinance as yf
             except Exception:
@@ -159,7 +270,7 @@ class StockService:
                     "website": None
                 }
 
-            return {
+            payload = {
                 "symbol": info.get("symbol", ticker.upper()),
                 "name": info.get("longName"),
                 "sector": info.get("sector"),
@@ -172,6 +283,8 @@ class StockService:
                 "description": info.get("longBusinessSummary"),
                 "website": info.get("website")
             }
+            INFO_CACHE[cache_key] = payload
+            return payload
         except Exception:
             return {
                 "symbol": ticker.upper(),
@@ -263,3 +376,122 @@ class StockService:
                 status_code=404,
                 detail=f"Error fetching corporate actions for {ticker}: {str(e)}",
             )
+
+    @staticmethod
+    def _fetch_market_item(ticker: str, name: str) -> Optional[Dict[str, Any]]:
+        try:
+            import yfinance as yf
+        except Exception as exc:
+            logger.warning("yfinance unavailable for %s: %s", ticker, exc)
+            return None
+
+        try:
+            stock = yf.Ticker(ticker)
+            fast_info = getattr(stock, "fast_info", None)
+            price = None
+            prev_close = None
+            volume = None
+
+            if fast_info:
+                try:
+                    info = stock.fast_info
+                    price = info.get("last_price") or info.get("last")
+                    prev_close = info.get("previous_close") or info.get("previousClose")
+                    volume = info.get("volume")
+                except Exception:
+                    price = None
+
+            if price is None:
+                return None
+
+            change = float(price) - float(prev_close) if prev_close else 0.0
+            change_percent = (change / float(prev_close)) * 100 if prev_close else 0.0
+
+            return {
+                "symbol": ticker,
+                "name": name,
+                "price": round(float(price), 4),
+                "change": round(float(change), 4),
+                "change_percent": round(float(change_percent), 2),
+                "volume": int(volume) if volume is not None else None,
+            }
+        except Exception as exc:
+            logger.warning("Failed to fetch %s: %s", ticker, exc)
+            return None
+
+    @staticmethod
+    @lru_cache(maxsize=4)
+    def _cached_market_overview(ttl_bucket: int) -> Dict[str, List[Dict[str, Any]]]:
+        results: Dict[str, List[Dict[str, Any]]] = {k: [] for k in MARKET_TICKERS.keys()}
+
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            future_map = {}
+            for category, tickers in MARKET_TICKERS.items():
+                for symbol, name in tickers.items():
+                    future = executor.submit(StockService._fetch_market_item, symbol, name)
+                    future_map[future] = category
+
+            for future in as_completed(future_map):
+                category = future_map[future]
+                try:
+                    item = future.result()
+                    if item:
+                        results[category].append(item)
+                except Exception as exc:
+                    logger.warning("Market overview fetch failed: %s", exc)
+
+        return results
+
+    @staticmethod
+    def get_market_overview() -> Dict[str, List[Dict[str, Any]]]:
+        cached = MARKET_CACHE.get("overview")
+        if cached is not None:
+            return cached
+
+        ttl_bucket = int(time.time() // 60)
+        data = StockService._cached_market_overview(ttl_bucket)
+        MARKET_CACHE["overview"] = data
+        return data
+
+    @staticmethod
+    def get_market_category(category: str) -> List[Dict[str, Any]]:
+        overview = StockService.get_market_overview()
+        return overview.get(category.upper(), [])
+
+    @staticmethod
+    def search_autocomplete(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        cache_key = query.strip().lower()
+        cached = AUTOCOMPLETE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        results: List[Dict[str, Any]] = []
+        normalized = query.strip().lower()
+
+        # PSX local search first
+        for symbol, name in MARKET_TICKERS.get("PSX", {}).items():
+            if normalized in symbol.lower() or normalized in name.lower():
+                results.append({"symbol": symbol, "name": name, "market": "PSX"})
+                if len(results) >= limit:
+                    AUTOCOMPLETE_CACHE[cache_key] = results
+                    return results
+
+        # yfinance search fallback
+        try:
+            import yfinance as yf
+
+            if hasattr(yf, "Search"):
+                search = yf.Search(query)
+                for item in (search.quotes or []):
+                    symbol = item.get("symbol")
+                    name = item.get("shortname") or item.get("longname") or item.get("name") or symbol
+                    exchange = item.get("exchange") or item.get("exchDisp") or "US"
+                    if symbol and all(r["symbol"] != symbol for r in results):
+                        results.append({"symbol": symbol, "name": name or symbol, "market": exchange})
+                    if len(results) >= limit:
+                        break
+        except Exception as exc:
+            logger.warning("Autocomplete fallback failed: %s", exc)
+
+        AUTOCOMPLETE_CACHE[cache_key] = results[:limit]
+        return results[:limit]

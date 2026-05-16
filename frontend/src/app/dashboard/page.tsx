@@ -16,6 +16,7 @@ import {
   Legend,
 } from 'recharts';
 import { getDashboard, type DashboardResponse } from '@/lib/api';
+import TickerTape from '@/components/TickerTape';
 import CandlestickChart from '@/components/CandlestickChart';
 import SectorHeatmap from '@/components/SectorHeatmap';
 
@@ -78,35 +79,15 @@ export default function Dashboard() {
   const price = data?.price;
   const technicals = data?.technical_indicators;
   const recommendation = data?.recommendation;
-
-  const mockRecommendation = {
-    symbol: ticker,
-    recommendation:
-      technicals?.rsi.signal === 'OVERBOUGHT'
-        ? 'SELL'
-        : technicals?.moving_averages.trend === 'GOLDEN_CROSS'
-        ? 'BUY'
-        : 'HOLD',
-    confidence: technicals ? 0.72 + Math.random() * 0.2 : 0.65,
-    score: technicals ? 72 : 65,
-    explanation: technicals
-      ? `Based on technical analysis: RSI is ${technicals.rsi.signal}, moving averages signal ${technicals.moving_averages.trend}.`
-      : 'Loading technical analysis...',
-    reasons: technicals
-      ? [
-          `RSI at ${technicals.rsi.value.toFixed(2)} - ${technicals.rsi.signal}`,
-          `Moving average trend: ${technicals.moving_averages.trend}`,
-          `MACD: ${technicals.macd.signal}`,
-          `Volatility: ${technicals.volatility.risk_level}`,
-        ]
-      : ['Analyzing technical indicators...'],
-  };
-
-  const finalRecommendation = recommendation || mockRecommendation;
+  const finalRecommendation = recommendation;
+  const recommendationLabel = finalRecommendation?.recommendation ?? 'WAITING';
+  const recommendationConfidence = finalRecommendation?.confidence ?? 0;
+  const recommendationExplanation = finalRecommendation?.explanation ?? 'Live recommendation will appear once technical analysis completes.';
+  const recommendationReasons = finalRecommendation?.reasons ?? [];
   const recommendationColor =
-    finalRecommendation.recommendation === 'BUY'
+    recommendationLabel === 'BUY'
       ? '#00ff41'
-      : finalRecommendation.recommendation === 'SELL'
+      : recommendationLabel === 'SELL'
       ? '#ff3131'
       : '#0a84ff';
 
@@ -128,6 +109,9 @@ export default function Dashboard() {
 
   return (
     <main className="mx-auto max-w-[1400px] px-6 py-10 sm:px-8">
+      <div style={{ marginBottom: 16 }}>
+        <TickerTape />
+      </div>
       <motion.section
         className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"
         initial="hidden"
@@ -213,13 +197,13 @@ export default function Dashboard() {
         <div className="glass-card rounded-[1.5rem] border border-[#00ff4130] bg-[#11182780] p-6">
           <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">AI Recommendation</p>
           <p className="mt-4 text-4xl font-semibold" style={{ color: recommendationColor }}>
-            {finalRecommendation.recommendation}
+            {recommendationLabel}
           </p>
-          <p className="mt-2 text-sm text-[#c7d3ffcc]">Confidence {(finalRecommendation.confidence * 100).toFixed(0)}%</p>
+          <p className="mt-2 text-sm text-[#c7d3ffcc]">Confidence {(recommendationConfidence * 100).toFixed(0)}%</p>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full" style={{ width: `${finalRecommendation.confidence * 100}%`, background: recommendationColor }} />
+            <div className="h-full rounded-full" style={{ width: `${recommendationConfidence * 100}%`, background: recommendationColor }} />
           </div>
-          <p className="mt-5 text-sm leading-6 text-[#c7d3ffcc]">{finalRecommendation.explanation}</p>
+          <p className="mt-5 text-sm leading-6 text-[#c7d3ffcc]">{recommendationExplanation}</p>
         </div>
 
         <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
@@ -332,7 +316,7 @@ export default function Dashboard() {
               <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
                 <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Recommendation Reasons</p>
                 <div className="space-y-3">
-                  {finalRecommendation.reasons?.map((reason, idx) => (
+                    {recommendationReasons.map((reason, idx) => (
                     <div key={idx} className="rounded-3xl border-l-4 border-[#00ff41] bg-white/5 p-4 text-sm text-[#d1d5db]">
                       {reason}
                     </div>

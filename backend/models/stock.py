@@ -106,9 +106,9 @@ class MovingAverageData(BaseModel):
     sma_20: Optional[float] = Field(None, example=188.50)
     sma_50: Optional[float] = Field(None, example=185.20)
     sma_200: Optional[float] = Field(None, example=178.90)
-    ema_12: float = Field(..., example=189.10)
-    ema_26: float = Field(..., example=187.40)
-    current_price: float = Field(..., example=189.84)
+    ema_12: Optional[float] = Field(None, example=189.10)
+    ema_26: Optional[float] = Field(None, example=187.40)
+    current_price: Optional[float] = Field(None, example=189.84)
     trend: str = Field(..., example="GOLDEN_CROSS")
 
 
@@ -133,6 +133,14 @@ class TechnicalIndicators(BaseModel):
     moving_averages: MovingAverageData
     macd: MACDData
     volatility: VolatilityData
+    bollinger_bands: Optional[Dict[str, Any]] = None
+
+    # Optional series data for advanced chart overlays
+    rsi_series: Optional[List[Dict[str, Any]]] = None
+    macd_series: Optional[List[Dict[str, Any]]] = None
+    sma_20_series: Optional[List[Dict[str, Any]]] = None
+    sma_50_series: Optional[List[Dict[str, Any]]] = None
+    bollinger_series: Optional[Dict[str, List[Dict[str, Any]]]] = None
 
 
 # ── Recommendation Models ──────────────────────────────────────────────────
@@ -151,6 +159,7 @@ class Recommendation(BaseModel):
     confidence: float = Field(..., example=0.72, description="Confidence score 0-1")
     score: float = Field(..., example=72.0, description="Raw score out of 100")
     explanation: str = Field(..., description="Human-readable AI explanation")
+    urdu_explanation: Optional[str] = Field(None, description="Urdu AI explanation")
     reasons: List[str] = Field(default_factory=list)
     technical_indicators: Optional[TechnicalIndicators] = None
     sentiment_summary: Optional[SentimentSummary] = None
@@ -188,3 +197,61 @@ class NewsArticle(BaseModel):
     url: str = Field(default="", example="https://cnbc.com/...")
     published_date: str = Field(default="", example="2026-05-15T08:00:00Z")
     description: str = Field(default="", example="Apple unveils next-gen AI capabilities")
+
+
+# ── Market Overview Models ───────────────────────────────────────────────
+
+class MarketItem(BaseModel):
+    symbol: str = Field(..., example="AAPL")
+    name: str = Field(..., example="Apple")
+    price: float = Field(..., example=189.84)
+    change: float = Field(..., example=1.25)
+    change_percent: float = Field(..., example=0.66)
+    volume: Optional[int] = Field(None, example=45000000)
+
+
+class MarketOverviewResponse(BaseModel):
+    PSX: List[MarketItem] = Field(default_factory=list)
+    US: List[MarketItem] = Field(default_factory=list)
+    CRYPTO: List[MarketItem] = Field(default_factory=list)
+    FOREX: List[MarketItem] = Field(default_factory=list)
+    COMMODITIES: List[MarketItem] = Field(default_factory=list)
+    INDICES: List[MarketItem] = Field(default_factory=list)
+
+
+class AutocompleteResult(BaseModel):
+    symbol: str = Field(..., example="AAPL")
+    name: str = Field(..., example="Apple")
+    market: str = Field(..., example="US")
+
+
+# ── Portfolio Models ─────────────────────────────────────────────────────
+
+class PortfolioHoldingCreate(BaseModel):
+    symbol: str
+    quantity: float
+    entry_price: float
+    entry_date: Optional[str] = None
+    notes: Optional[str] = None
+    market: Optional[str] = Field(default="US")
+
+
+class PortfolioHoldingResponse(BaseModel):
+    id: str
+    symbol: str
+    quantity: float
+    entry_price: float
+    entry_date: str
+    notes: Optional[str] = None
+    market: Optional[str] = None
+    current_price: Optional[float] = None
+    pnl: Optional[float] = None
+    pnl_percent: Optional[float] = None
+
+
+class PortfolioSummaryResponse(BaseModel):
+    total_value: float
+    total_invested: float
+    total_pnl: float
+    total_pnl_percent: float
+    holdings: List[PortfolioHoldingResponse] = Field(default_factory=list)

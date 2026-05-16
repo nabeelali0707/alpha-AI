@@ -176,6 +176,57 @@ class TechnicalService:
         }
 
     @staticmethod
+    def calculate_sharpe_ratio(df: pd.DataFrame, risk_free_rate: float = 0.02) -> Dict[str, Any]:
+        """Calculate annualized Sharpe ratio using daily returns."""
+        close = df["Close"].dropna()
+        returns = close.pct_change().dropna()
+        if returns.empty:
+            return {"sharpe": None}
+        excess_returns = returns - (risk_free_rate / 252)
+        sharpe = (excess_returns.mean() / excess_returns.std()) * np.sqrt(252)
+        return {"sharpe": round(float(sharpe), 4)}
+
+    @staticmethod
+    def calculate_max_drawdown(df: pd.DataFrame) -> Dict[str, Any]:
+        close = df["Close"].dropna()
+        if close.empty:
+            return {"max_drawdown": None}
+        cumulative = close.cummax()
+        drawdown = (close - cumulative) / cumulative
+        max_dd = float(drawdown.min())
+        return {"max_drawdown": round(max_dd, 4)}
+
+    @staticmethod
+    def calculate_beta(df: pd.DataFrame, benchmark_ticker: str = "SPY") -> Dict[str, Any]:
+        """Estimate beta vs a benchmark ticker (default SPY) using daily returns."""
+        try:
+            import yfinance as yf
+        except Exception:
+            return {"beta": None}
+
+        close = df["Close"].dropna()
+        if close.empty:
+            return {"beta": None}
+
+        try:
+            bench = yf.Ticker(benchmark_ticker).history(period="1y", interval="1d")["Close"].dropna()
+        except Exception:
+            return {"beta": None}
+
+        # Align dates
+        combined = pd.concat([close.pct_change(), bench.pct_change()], axis=1).dropna()
+        combined.columns = ["asset", "bench"]
+        if combined.empty:
+            return {"beta": None}
+
+        cov = combined["asset"].cov(combined["bench"])
+        var = combined["bench"].var()
+        if var == 0 or np.isnan(var):
+            return {"beta": None}
+        beta = cov / var
+        return {"beta": round(float(beta), 4)}
+
+    @staticmethod
     def calculate_bollinger_bands(df: pd.DataFrame, window: int = 20, num_std: float = 2.0) -> Dict[str, Any]:
         """
         Calculate Bollinger Bands.
@@ -221,6 +272,14 @@ class TechnicalService:
             "window": window,
         }
 
+    @staticmethod
+    def _series_points(series: pd.Series) -> list[dict[str, Any]]:
+        points = []
+        for idx, value in series.dropna().items():
+            date_str = idx.strftime("%Y-%m-%d %H:%M:%S") if hasattr(idx, "strftime") else str(idx)
+            points.append({"date": date_str, "value": float(value)})
+        return points
+
     def get_all_indicators(self, ticker: str) -> Dict[str, Any]:
         """
         Calculate all technical indicators for a given ticker.
@@ -244,13 +303,66 @@ class TechnicalService:
                 },
                 "macd": {"macd_line": 0.0, "signal_line": 0.0, "histogram": 0.0, "signal": "NEUTRAL"},
                 "volatility": {"daily_volatility": 0.0, "annualized_volatility": 0.0, "risk_level": "MODERATE", "window": 20},
+                "bollinger_bands": {"upper_band": None, "middle_band": None, "lower_band": None, "signal": "NEUTRAL", "window": 20},
+                "rsi_series": [],
+                "macd_series": [],
+                "sma_20_series": [],
+                "sma_50_series": [],
+                "bollinger_series": {"upper": [], "middle": [], "lower": []},
             }
+
+        rsi_payload = self.calculate_rsi(df)
+        ma_payload = self.calculate_moving_averages(df)
+        macd_payload = self.calculate_macd(df)
+        vol_payload = self.calculate_volatility(df)
+        bb_payload = self.calculate_bollinger_bands(df)
+        sharpe_payload = self.calculate_sharpe_ratio(df)
+        drawdown_payload = self.calculate_max_drawdown(df)
+        beta_payload = self.calculate_beta(df)
+
+        # Build series for chart overlays
+        close = df["Close"]
+        sma_20 = close.rolling(window=20).mean()
+        sma_50 = close.rolling(window=50).mean()
+
+        ema_12 = close.ewm(span=12, adjust=False).mean()
+        ema_26 = close.ewm(span=26, adjust=False).mean()
+        macd_line = ema_12 - ema_26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        histogram = macd_line - signal_line
+
+        sma = close.rolling(window=20).mean()
+        std = close.rolling(window=20).std()
+        upper_band = sma + 2.0 * std
+        lower_band = sma - 2.0 * std
+
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = -delta.where(delta < 0, 0.0)
+        avg_gain = gain.rolling(window=14, min_periods=14).mean()
+        avg_loss = loss.rolling(window=14, min_periods=14).mean()
+        rs = avg_gain / avg_loss
+        rsi_series = 100 - (100 / (1 + rs))
 
         return {
             "symbol": ticker.upper(),
-            "rsi": self.calculate_rsi(df),
-            "moving_averages": self.calculate_moving_averages(df),
-            "macd": self.calculate_macd(df),
-            "volatility": self.calculate_volatility(df),
-            "bollinger_bands": self.calculate_bollinger_bands(df),
+            "rsi": rsi_payload,
+            "moving_averages": ma_payload,
+            "macd": macd_payload,
+            "volatility": vol_payload,
+            "bollinger_bands": bb_payload,
+            "rsi_series": self._series_points(rsi_series),
+            "macd_series": self._series_points(histogram),
+            "sma_20_series": self._series_points(sma_20),
+            "sma_50_series": self._series_points(sma_50),
+            "bollinger_series": {
+                "upper": self._series_points(upper_band),
+                "middle": self._series_points(sma),
+                "lower": self._series_points(lower_band),
+            },
+            "risk_metrics": {
+                **sharpe_payload,
+                **drawdown_payload,
+                **beta_payload,
+            },
         }

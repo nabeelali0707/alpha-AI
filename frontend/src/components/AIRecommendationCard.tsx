@@ -8,6 +8,7 @@ interface Recommendation {
   confidence: number;
   score: number;
   explanation: string;
+  urdu_explanation?: string | null;
   reasons: string[];
   sentiment_summary?: { label?: string; score?: number; total_articles?: number } | null;
 }
@@ -64,6 +65,7 @@ export default function AIRecommendationCard({ data, loading = false, ticker }: 
   const rec = data?.recommendation ?? "HOLD";
   const confidence = Math.round((data?.confidence ?? 0.65) * 100);
   const score = data?.score ?? 65;
+  const [useUrdu, setUseUrdu] = React.useState(false);
 
   const colorMap: Record<string, string> = { BUY: "#00ff41", SELL: "#ff3131", HOLD: "#0a84ff" };
   const glowMap: Record<string, string> = {
@@ -186,10 +188,28 @@ export default function AIRecommendationCard({ data, loading = false, ticker }: 
           </div>
 
           {/* Explanation */}
-          {data?.explanation && (
-            <p style={{ fontSize: "13px", color: "rgba(199,211,255,0.8)", lineHeight: 1.7, marginBottom: "20px", borderLeft: `2px solid ${recColor}40`, paddingLeft: "12px" }}>
-              {data.explanation.split("\n")[0]}
-            </p>
+          {(data?.explanation || data?.urdu_explanation) && (
+            <div style={{ marginBottom: "20px" }}>
+              <p style={{ fontSize: "13px", color: "rgba(199,211,255,0.8)", lineHeight: 1.7, marginBottom: "10px", borderLeft: `2px solid ${recColor}40`, paddingLeft: "12px" }}>
+                {(useUrdu && data?.urdu_explanation ? data.urdu_explanation : data?.explanation)?.split("\n")[0]}
+              </p>
+              {data?.urdu_explanation && (
+                <button
+                  onClick={() => setUseUrdu((s) => !s)}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "8px",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.04)",
+                    color: "rgba(199,211,255,0.85)",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {useUrdu ? "View in English" : "اردو میں دیکھیں"}
+                </button>
+              )}
+            </div>
           )}
 
           {/* Reasons */}

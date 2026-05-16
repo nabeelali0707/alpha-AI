@@ -7,11 +7,15 @@ import logging
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from utils.config import settings
 from utils.error_handlers import register_error_handlers
+from utils.limiter import limiter
 from models.stock import SimpleStockSummary
-from routes import analysis, auth, portfolio, stocks, search
+from routes import analysis, auth, portfolio, stocks, search, live
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -54,6 +58,11 @@ app = FastAPI(
     ],
 )
 
+# ── Rate Limiting ─────────────────────────────────────────────────────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 # ── CORS Middleware ───────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -88,6 +97,7 @@ app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["AI Analysi
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["Portfolio"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
+app.include_router(live.router, prefix="/api/v1", tags=["Live Markets"])
 
 # ── Root ────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["System"], include_in_schema=False)
