@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import { getDashboard, type DashboardResponse } from '@/lib/api';
 import TickerTape from '@/components/TickerTape';
+import LiveTicker from '@/components/LiveTicker';
 import CandlestickChart from '@/components/CandlestickChart';
 import SectorHeatmap from '@/components/SectorHeatmap';
 
@@ -109,6 +110,9 @@ export default function Dashboard() {
 
   return (
     <main className="mx-auto max-w-[1400px] px-6 py-10 sm:px-8">
+      <div style={{ marginBottom: 4 }}>
+        <LiveTicker />
+      </div>
       <div style={{ marginBottom: 16 }}>
         <TickerTape />
       </div>

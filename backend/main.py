@@ -3,7 +3,10 @@ AlphaAI — Main Application Entry Point
 Production-ready FastAPI backend for AI-powered Stock Market Analysis.
 """
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +19,7 @@ from utils.error_handlers import register_error_handlers
 from utils.limiter import limiter
 from models.stock import SimpleStockSummary
 from routes import analysis, auth, portfolio, stocks, search, live
+from routes import ws_live
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -24,6 +28,22 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("alphaai")
+
+
+# ── Lifespan — start / stop the WebSocket price broadcaster ────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage background tasks tied to the application lifecycle."""
+    logger.info("🚀 Starting WebSocket price broadcaster…")
+    broadcaster_task = asyncio.create_task(ws_live.price_broadcaster())
+    yield
+    logger.info("🛑 Shutting down WebSocket price broadcaster…")
+    broadcaster_task.cancel()
+    try:
+        await broadcaster_task
+    except asyncio.CancelledError:
+        logger.info("Price broadcaster cancelled cleanly")
+
 
 # ── FastAPI App ─────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -36,10 +56,12 @@ app = FastAPI(
         "- 💡 Algorithmic BUY/SELL/HOLD recommendations\n"
         "- 📊 Technical indicators (RSI, MACD, Moving Averages)\n"
         "- 📰 Live financial news aggregation\n"
-        "- 🎯 Combined dashboard endpoint for frontend consumption\n\n"
+        "- 🎯 Combined dashboard endpoint for frontend consumption\n"
+        "- 🔌 Real-time WebSocket price streaming\n\n"
         "Built with FastAPI • Powered by HuggingFace Transformers"
     ),
     version=settings.app_version,
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_tags=[
@@ -54,6 +76,10 @@ app = FastAPI(
         {
             "name": "AI Analysis",
             "description": "AI-powered sentiment analysis, recommendations, technical indicators, news, and dashboard",
+        },
+        {
+            "name": "WebSocket",
+            "description": "Real-time price streaming via WebSocket connections",
         },
     ],
 )
@@ -98,6 +124,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["Portfolio"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 app.include_router(live.router, prefix="/api/v1", tags=["Live Markets"])
+app.include_router(ws_live.router, prefix="/api/v1/ws", tags=["WebSocket"])
 
 # ── Root ────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["System"], include_in_schema=False)
