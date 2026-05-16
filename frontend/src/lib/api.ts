@@ -171,17 +171,35 @@ export type PortfolioHolding = {
   entry_date: string;
   notes?: string | null;
   market?: string | null;
-  current_price?: number | null;
-  pnl?: number | null;
-  pnl_percent?: number | null;
+  company_name?: string | null;
+  current_price?: number;
+  market_value?: number;
+  gain_loss?: number;
+  gain_loss_percentage?: number;
+  daily_change_percentage?: number;
+};
+
+export type PortfolioAllocation = {
+  symbol: string;
+  percentage: number;
 };
 
 export type PortfolioSummary = {
   total_value: number;
-  total_invested: number;
-  total_pnl: number;
-  total_pnl_percent: number;
+  total_cost: number;
+  total_gain_loss: number;
+  total_gain_loss_percentage: number;
+  daily_gain_loss: number;
+  daily_gain_loss_percentage: number;
+  best_performing_asset?: string | null;
+  worst_performing_asset?: string | null;
+  allocation: PortfolioAllocation[];
   holdings: PortfolioHolding[];
+};
+
+export type PortfolioHistoryEntry = {
+  portfolio_value: number;
+  recorded_at: string;
 };
 
 export type NewsArticle = {
@@ -338,8 +356,26 @@ export async function getPortfolioHoldings(token: string): Promise<PortfolioHold
   return response.data;
 }
 
-export async function addPortfolioHolding(token: string, payload: Omit<PortfolioHolding, "id">) {
-  const response = await alphaaiApi.post<PortfolioHolding>("/portfolio/holdings", payload, {
+export async function addPortfolioHolding(token: string, payload: Partial<PortfolioHolding>) {
+  const response = await alphaaiApi.post("/portfolio/holdings", {
+    symbol: payload.symbol,
+    quantity: payload.quantity,
+    average_buy_price: payload.entry_price,
+    market: payload.market,
+    company_name: payload.company_name,
+    notes: payload.notes
+  }, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}
+
+export async function updatePortfolioHolding(token: string, id: string, payload: Partial<PortfolioHolding>) {
+  const response = await alphaaiApi.put(`/portfolio/holdings/${id}`, {
+    quantity: payload.quantity,
+    average_buy_price: payload.entry_price,
+    notes: payload.notes
+  }, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return response.data;
@@ -354,6 +390,21 @@ export async function removePortfolioHolding(token: string, id: string) {
 
 export async function getPortfolioSummary(token: string): Promise<PortfolioSummary> {
   const response = await alphaaiApi.get<PortfolioSummary>("/portfolio/summary", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}
+
+export async function getPortfolioHistory(token: string, period = "1M"): Promise<PortfolioHistoryEntry[]> {
+  const response = await alphaaiApi.get<PortfolioHistoryEntry[]>("/portfolio/history", {
+    params: { period },
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+}
+
+export async function getPortfolioAnalytics(token: string) {
+  const response = await alphaaiApi.get("/portfolio/analytics", {
     headers: { Authorization: `Bearer ${token}` },
   });
   return response.data;

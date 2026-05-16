@@ -73,3 +73,9 @@ create table if not exists public.psx_stocks (
   metadata jsonb,
   created_at timestamptz default now()
 );
+create table if not exists public.portfolio_history (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id),
+  portfolio_value numeric not null,
+  recorded_at timestamptz default now()
+);

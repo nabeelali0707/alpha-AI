@@ -1,33 +1,33 @@
 # FastAPI Core
-fastapi==0.111.0
-uvicorn==0.30.1
-pydantic==2.13.4
-pydantic-settings==2.3.3
+fastapi>=0.111.0
+uvicorn>=0.30.1
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
 
 # Data Analysis & Finance
-yfinance==0.2.40
-pandas==3.0.1
-numpy==2.4.3
-scikit-learn==1.7.2
+yfinance>=0.2.40
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.0.0
 
 # AI & Machine Learning
-transformers==5.8.1
-torch==2.12.0
+transformers>=4.0.0
+torch>=2.0.0
 
 # Web Scraping & APIs
-requests==2.32.3
-beautifulsoup4==4.12.3
-newsapi-python==0.2.7
-httpx==0.27.0
-cachetools==5.5.0
-coingecko-api==1.0.0
-aiohttp==3.9.2
-supabase==2.6.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+# newsapi-python (Conflicts with requests)
+httpx>=0.27.0
+cachetools>=5.0.0
+# coingecko-api (Conflicts with requests)
+aiohttp>=3.9.0
+supabase>=2.6.0
 
 # Utilities
-python-dotenv==1.0.1
-python-multipart==0.0.9
-SlowApi==0.1.9
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+SlowApi>=0.1.9
 
 # Translation for Urdu support
-deep-translator==1.11.4
+deep-translator>=1.11.4

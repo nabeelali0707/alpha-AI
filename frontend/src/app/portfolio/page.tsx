@@ -1,26 +1,33 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { PieChart, Pie, Cell, LineChart, Line, Tooltip, ResponsiveContainer } from "recharts";
+import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import {
-  addPortfolioHolding,
-  getPortfolioHoldings,
   getPortfolioSummary,
+  getPortfolioHistory,
+  addPortfolioHolding,
   removePortfolioHolding,
+  updatePortfolioHolding,
   type PortfolioHolding,
   type PortfolioSummary,
+  type PortfolioHistoryEntry,
 } from "@/lib/api";
 
-const COLORS = ["#00ff41", "#3b82f6", "#f59e0b", "#ff3131"];
+// Components
+import OverviewCards from "@/components/portfolio/OverviewCards";
+import HoldingsTable from "@/components/portfolio/HoldingsTable";
+import GrowthChart from "@/components/portfolio/GrowthChart";
+import AllocationChart from "@/components/portfolio/AllocationChart";
+import AddHoldingModal from "@/components/portfolio/AddHoldingModal";
 
-export default function Portfolio() {
+export default function PortfolioPage() {
   const [token, setToken] = useState<string | null>(null);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
-  const [holdings, setHoldings] = useState<PortfolioHolding[]>([]);
-  const [showModal, setShowModal] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ symbol: "", market: "US", quantity: "", entry_price: "", entry_date: "" });
+  const [history, setHistory] = useState<PortfolioHistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingHolding, setEditingHolding] = useState<PortfolioHolding | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -28,187 +35,158 @@ export default function Portfolio() {
     });
   }, []);
 
-  async function loadData(accessToken: string) {
+  const loadData = async (accessToken: string, period = "1M") => {
     setLoading(true);
     try {
-      const [sum, hold] = await Promise.all([
+      const [sumData, histData] = await Promise.all([
         getPortfolioSummary(accessToken),
-        getPortfolioHoldings(accessToken),
+        getPortfolioHistory(accessToken, period),
       ]);
-      setSummary(sum);
-      setHoldings(hold);
+      setSummary(sumData);
+      setHistory(histData);
+    } catch (error) {
+      console.error("Error loading portfolio data:", error);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
     if (token) loadData(token);
   }, [token]);
 
-  const allocation = useMemo(() => {
-    const map: Record<string, number> = {};
-    holdings.forEach((h) => {
-      const key = h.market || "US";
-      map[key] = (map[key] ?? 0) + (h.current_price || 0) * h.quantity;
-    });
-    return Object.entries(map).map(([market, value]) => ({ name: market, value }));
-  }, [holdings]);
-
-  const series = useMemo(() => {
-    const sorted = [...holdings].sort((a, b) => new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime());
-    let running = 0;
-    return sorted.map((h) => {
-      running += (h.current_price || h.entry_price) * h.quantity;
-      return { date: new Date(h.entry_date).toLocaleDateString(), value: Number(running.toFixed(2)) };
-    });
-  }, [holdings]);
-
-  const handleAdd = async () => {
+  const handleSaveHolding = async (payload: Partial<PortfolioHolding>) => {
     if (!token) return;
-    await addPortfolioHolding(token, {
-      symbol: form.symbol,
-      market: form.market,
-      quantity: Number(form.quantity),
-      entry_price: Number(form.entry_price),
-      entry_date: form.entry_date,
-    } as any);
-    setShowModal(false);
-    setForm({ symbol: "", market: "US", quantity: "", entry_price: "", entry_date: "" });
-    await loadData(token);
+    try {
+      if (editingHolding) {
+        await updatePortfolioHolding(token, editingHolding.id, payload);
+      } else {
+        await addPortfolioHolding(token, payload);
+      }
+      setIsModalOpen(false);
+      setEditingHolding(null);
+      loadData(token);
+    } catch (error) {
+      console.error("Error saving holding:", error);
+    }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!token) return;
-    await removePortfolioHolding(token, id);
-    await loadData(token);
+  const handleDeleteHolding = async (id: string) => {
+    if (!token || !confirm("Are you sure you want to remove this position?")) return;
+    try {
+      await removePortfolioHolding(token, id);
+      loadData(token);
+    } catch (error) {
+      console.error("Error deleting holding:", error);
+    }
+  };
+
+  const handleEditHolding = (holding: PortfolioHolding) => {
+    setEditingHolding(holding);
+    setIsModalOpen(true);
+  };
+
+  const handlePeriodChange = (period: string) => {
+    if (token) loadData(token, period);
   };
 
   if (!token) {
     return (
-      <div className="container" style={{ paddingTop: "var(--spacing-md)", paddingBottom: "40px" }}>
-        <h1 className="headline-lg">Portfolio Management</h1>
-        <p className="data-mono" style={{ opacity: 0.6, marginTop: 8 }}>Login required to view holdings.</p>
+      <div className="min-h-screen flex items-center justify-center bg-[#060709] p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-100 glass-card p-12 text-center rounded-3xl border border-white/5"
+        >
+          <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <span className="text-2xl">🔒</span>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Portfolio Locked</h1>
+          <p className="text-white/40 mb-8">Please sign in to access your investment portfolio and real-time analytics.</p>
+          <button className="w-100 py-4 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-all">
+            Go to Login
+          </button>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="container" style={{ paddingTop: "var(--spacing-md)", paddingBottom: "40px" }}>
-      <div style={{ marginBottom: "var(--spacing-lg)" }}>
-        <h1 className="headline-lg">Portfolio Management</h1>
-        <p className="data-mono" style={{ opacity: 0.5 }}>Track and manage your investments</p>
-      </div>
+    <div className="min-h-screen bg-[#060709] text-white p-4 md:p-8">
+      {/* Header */}
+      <header className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <h1 className="text-4xl font-bold tracking-tighter mb-2">
+            Portfolio <span className="text-emerald-500">Intelligence</span>
+          </h1>
+          <div className="flex items-center space-x-3">
+            <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] font-mono text-white/50 uppercase tracking-widest">
+              Live Terminal
+            </span>
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            <span className="text-xs text-white/30 font-medium">Real-time market sync active</span>
+          </div>
+        </motion.div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 12 }}>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>Add Position</button>
-        </div>
-        <p style={{ color: "var(--text-secondary)", fontSize: 12 }}>{loading ? "Syncing..." : "Live P&L"}</p>
-      </div>
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="flex items-center space-x-4"
+        >
+          <button 
+            onClick={() => {
+              setEditingHolding(null);
+              setIsModalOpen(true);
+            }}
+            className="px-6 py-3 bg-emerald-500 text-black font-bold rounded-xl hover:bg-emerald-400 transition-all flex items-center space-x-2 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+          >
+            <span>+</span>
+            <span>Add Asset</span>
+          </button>
+        </motion.div>
+      </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "var(--spacing-md)", marginBottom: "var(--spacing-lg)" }}>
-        <div className="glass" style={{ padding: "var(--spacing-md)" }}>
-          <p className="data-mono" style={{ opacity: 0.6, marginBottom: 8 }}>TOTAL INVESTED</p>
-          <h2 style={{ fontSize: "2rem", color: "#dae2fd" }}>${summary?.total_invested.toFixed(0) ?? "0"}</h2>
-        </div>
-        <div className="glass" style={{ padding: "var(--spacing-md)" }}>
-          <p className="data-mono" style={{ opacity: 0.6, marginBottom: 8 }}>CURRENT VALUE</p>
-          <h2 style={{ fontSize: "2rem", color: "#0a84ff" }}>${summary?.total_value.toFixed(0) ?? "0"}</h2>
-        </div>
-        <div className="glass" style={{ padding: "var(--spacing-md)", border: `2px solid ${(summary?.total_pnl ?? 0) >= 0 ? '#00ff41' : '#ff3131'}30` }}>
-          <p className="data-mono" style={{ opacity: 0.6, marginBottom: 8 }}>TOTAL P&L</p>
-          <h2 style={{ fontSize: "2rem", color: (summary?.total_pnl ?? 0) >= 0 ? "#00ff41" : "#ff3131" }}>
-            ${summary?.total_pnl.toFixed(0) ?? "0"} ({summary?.total_pnl_percent.toFixed(2) ?? "0"}%)
-          </h2>
-        </div>
-      </div>
+      <main className="max-w-7xl mx-auto space-y-8">
+        {/* Metric Cards */}
+        <OverviewCards summary={summary} loading={loading} />
 
-      <div className="glass" style={{ padding: "var(--spacing-md)", marginBottom: "var(--spacing-lg)" }}>
-        <h3 style={{ marginBottom: "var(--spacing-md)", color: "#00ff41" }}>ACTIVE HOLDINGS</h3>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid rgba(0,255,65,0.3)" }}>
-                <th style={{ padding: 12, textAlign: "left", color: "#00ff41" }}>Symbol</th>
-                <th style={{ padding: 12, textAlign: "left", color: "#00ff41" }}>Market</th>
-                <th style={{ padding: 12, textAlign: "right", color: "#00ff41" }}>Qty</th>
-                <th style={{ padding: 12, textAlign: "right", color: "#00ff41" }}>Entry</th>
-                <th style={{ padding: 12, textAlign: "right", color: "#00ff41" }}>Current</th>
-                <th style={{ padding: 12, textAlign: "right", color: "#00ff41" }}>P&L</th>
-                <th style={{ padding: 12, textAlign: "right", color: "#00ff41" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holdings.map((holding) => (
-                <tr key={holding.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                  <td style={{ padding: 12, fontWeight: 700, color: "#dae2fd" }}>{holding.symbol}</td>
-                  <td style={{ padding: 12, color: "#9ca3af" }}>{holding.market ?? "US"}</td>
-                  <td style={{ padding: 12, textAlign: "right", color: "#dae2fd" }}>{holding.quantity}</td>
-                  <td style={{ padding: 12, textAlign: "right", color: "#dae2fd" }}>${holding.entry_price.toFixed(2)}</td>
-                  <td style={{ padding: 12, textAlign: "right", color: "#0a84ff" }}>${holding.current_price?.toFixed(2) ?? "--"}</td>
-                  <td style={{ padding: 12, textAlign: "right", color: (holding.pnl ?? 0) >= 0 ? "#00ff41" : "#ff3131", fontWeight: 700 }}>
-                    {(holding.pnl ?? 0) >= 0 ? "+" : ""}${holding.pnl?.toFixed(2) ?? "0"} ({holding.pnl_percent?.toFixed(2) ?? "0"}%)
-                  </td>
-                  <td style={{ padding: 12, textAlign: "right" }}>
-                    <button className="btn btn-outline" onClick={() => handleDelete(holding.id)} style={{ padding: "4px 10px", fontSize: 11 }}>Remove</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--spacing-md)" }}>
-        <div className="glass" style={{ padding: "var(--spacing-md)" }}>
-          <h3 style={{ marginBottom: "var(--spacing-md)", color: "#00ff41" }}>Allocation by Market</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={allocation} dataKey="value" nameKey="name" outerRadius={80} innerRadius={40}>
-                {allocation.map((_, idx) => (
-                  <Cell key={`cell-${idx}`} fill={COLORS[idx % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="glass" style={{ padding: "var(--spacing-md)" }}>
-          <h3 style={{ marginBottom: "var(--spacing-md)", color: "#00ff41" }}>Portfolio Value Over Time</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={series}>
-              <Line type="monotone" dataKey="value" stroke="#00ff41" strokeWidth={2} dot={false} />
-              <Tooltip />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {showModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ width: 420, background: "var(--bg-secondary)", borderRadius: 16, border: "1px solid var(--border-color)", padding: 20 }}>
-            <h3 style={{ color: "var(--text-primary)", marginBottom: 12 }}>Add Position</h3>
-            <div style={{ display: "grid", gap: 10 }}>
-              <input placeholder="Symbol" value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "white" }} />
-              <select value={form.market} onChange={(e) => setForm({ ...form, market: e.target.value })} style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "white" }}>
-                <option value="US">US</option>
-                <option value="PSX">PSX</option>
-                <option value="CRYPTO">CRYPTO</option>
-                <option value="FOREX">FOREX</option>
-              </select>
-              <input placeholder="Quantity" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "white" }} />
-              <input placeholder="Entry Price" value={form.entry_price} onChange={(e) => setForm({ ...form, entry_price: e.target.value })} style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "white" }} />
-              <input type="date" value={form.entry_date} onChange={(e) => setForm({ ...form, entry_date: e.target.value })} style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "white" }} />
-            </div>
-            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleAdd}>Save</button>
-            </div>
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <GrowthChart data={history} loading={loading} onPeriodChange={handlePeriodChange} />
+          </div>
+          <div className="lg:col-span-1">
+            <AllocationChart data={summary?.allocation || []} loading={loading} />
           </div>
         </div>
-      )}
+
+        {/* Holdings Table */}
+        <HoldingsTable 
+          holdings={summary?.holdings || []} 
+          loading={loading} 
+          onDelete={handleDeleteHolding}
+          onEdit={handleEditHolding}
+        />
+        
+        {/* Footer/Meta */}
+        <footer className="pt-12 pb-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center text-white/20 text-[10px] font-mono uppercase tracking-widest gap-4">
+          <div>AlphaAI Portfolio Engine v2.0.1</div>
+          <div className="flex space-x-6">
+            <span>Market Data: yfinance</span>
+            <span>Analysis: AI Sentient</span>
+          </div>
+        </footer>
+      </main>
+
+      <AddHoldingModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSave={handleSaveHolding}
+        editingHolding={editingHolding}
+      />
     </div>
   );
 }
