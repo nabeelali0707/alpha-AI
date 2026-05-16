@@ -22,6 +22,12 @@ export const alphaaiApi = axios.create({
   },
 });
 
+export type SearchResult = {
+  symbol: string;
+  name: string;
+  sector: string;
+};
+
 export type StockPrice = {
   symbol: string;
   price: number;
@@ -149,5 +155,11 @@ export async function getTechnicalIndicators(ticker: string) {
 
 export async function getDashboard(ticker: string) {
   const response = await alphaaiApi.get<DashboardResponse>(`/analysis/dashboard/${ticker}`);
+  return response.data;
+}
+export async function searchStocks(query: string, limit = 8) {
+  const response = await alphaaiApi.get<SearchResult[]>(`/search/${encodeURIComponent(query)}`, {
+    params: { limit },
+  });
   return response.data;
 }

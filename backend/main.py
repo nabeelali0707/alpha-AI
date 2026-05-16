@@ -5,12 +5,13 @@ Production-ready FastAPI backend for AI-powered Stock Market Analysis.
 
 import logging
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from utils.config import settings
 from utils.error_handlers import register_error_handlers
-from routes import analysis, auth, portfolio, stocks
+from models.stock import SimpleStockSummary
+from routes import analysis, auth, portfolio, stocks, search
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -86,6 +87,7 @@ app.include_router(stocks.router, prefix="/api/v1/stocks", tags=["Stocks"])
 app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["AI Analysis"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["Portfolio"])
+app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 
 # ── Root ────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["System"], include_in_schema=False)
@@ -94,6 +96,72 @@ async def root():
         "message": "🐉 Welcome to AlphaAI — AI-Powered Stock Market Analyzer",
         "docs": "/docs",
         "health": "/health",
+    }
+
+
+@app.get(
+    "/stock/{ticker}",
+    response_model=SimpleStockSummary,
+    tags=["System"],
+    summary="Get basic stock info",
+    description="Fetch the current price, company name, market cap, and volume for a ticker using yfinance.",
+)
+async def get_simple_stock(ticker: str):
+    try:
+        import yfinance as yf
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"yfinance import failed: {str(exc)}")
+
+    stock = yf.Ticker(ticker)
+    info = {}
+    price = None
+    company_name = None
+    market_cap = None
+    volume = None
+
+    # Prefer fast_info where possible because it's usually lighter than full stock.info.
+    fast_info = getattr(stock, "fast_info", None)
+    if fast_info:
+        try:
+            price = fast_info.get("last_price") or fast_info.get("last")
+            volume = fast_info.get("volume") or volume
+        except Exception:
+            pass
+
+    if price is None:
+        try:
+            info = stock.info or {}
+        except Exception:
+            info = {}
+
+        price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
+        company_name = info.get("longName") or info.get("shortName")
+        market_cap = info.get("marketCap")
+        volume = info.get("volume") or info.get("regularMarketVolume")
+
+    if price is None:
+        try:
+            hist = stock.history(period="5d", interval="1d")
+            if hist is not None and not hist.empty:
+                price = hist["Close"].iloc[-1]
+                volume = int(hist["Volume"].iloc[-1]) if volume is None else volume
+        except Exception:
+            hist = None
+    else:
+        try:
+            hist = stock.history(period="5d", interval="1d")
+        except Exception:
+            hist = None
+
+    if price is None:
+        raise HTTPException(status_code=404, detail=f"No stock data available for ticker {ticker}")
+
+    return {
+        "symbol": ticker.upper(),
+        "company_name": company_name,
+        "price": float(price) if price is not None else None,
+        "market_cap": int(market_cap) if market_cap is not None else None,
+        "volume": int(volume) if volume is not None else None,
     }
 
 

@@ -175,6 +175,52 @@ class TechnicalService:
             "window": window,
         }
 
+    @staticmethod
+    def calculate_bollinger_bands(df: pd.DataFrame, window: int = 20, num_std: float = 2.0) -> Dict[str, Any]:
+        """
+        Calculate Bollinger Bands.
+        Upper Band = SMA-20 + 2 * StdDev
+        Lower Band = SMA-20 - 2 * StdDev
+        """
+        close = df["Close"]
+        sma = close.rolling(window=window).mean()
+        std = close.rolling(window=window).std()
+
+        upper_band = sma + num_std * std
+        lower_band = sma - num_std * std
+        current_price = float(close.iloc[-1])
+        current_sma = float(sma.iloc[-1]) if not pd.isna(sma.iloc[-1]) else None
+        current_upper = float(upper_band.iloc[-1]) if not pd.isna(upper_band.iloc[-1]) else None
+        current_lower = float(lower_band.iloc[-1]) if not pd.isna(lower_band.iloc[-1]) else None
+
+        # Bandwidth: (upper - lower) / middle
+        bandwidth = None
+        if current_upper and current_lower and current_sma:
+            bandwidth = round((current_upper - current_lower) / current_sma, 4)
+
+        # %B: (price - lower) / (upper - lower)
+        percent_b = None
+        if current_upper and current_lower and current_upper != current_lower:
+            percent_b = round((current_price - current_lower) / (current_upper - current_lower), 4)
+
+        # Signal
+        if current_upper and current_price >= current_upper:
+            signal = "OVERBOUGHT"
+        elif current_lower and current_price <= current_lower:
+            signal = "OVERSOLD"
+        else:
+            signal = "NEUTRAL"
+
+        return {
+            "upper_band": round(current_upper, 2) if current_upper else None,
+            "middle_band": round(current_sma, 2) if current_sma else None,
+            "lower_band": round(current_lower, 2) if current_lower else None,
+            "bandwidth": bandwidth,
+            "percent_b": percent_b,
+            "signal": signal,
+            "window": window,
+        }
+
     def get_all_indicators(self, ticker: str) -> Dict[str, Any]:
         """
         Calculate all technical indicators for a given ticker.
@@ -206,4 +252,5 @@ class TechnicalService:
             "moving_averages": self.calculate_moving_averages(df),
             "macd": self.calculate_macd(df),
             "volatility": self.calculate_volatility(df),
+            "bollinger_bands": self.calculate_bollinger_bands(df),
         }

@@ -43,6 +43,15 @@ class StockMetadata(BaseModel):
     website: Optional[str] = Field(None, example="https://www.apple.com")
 
 
+class SimpleStockSummary(BaseModel):
+    """Simple stock summary returned by /stock/{ticker}."""
+    symbol: str = Field(..., example="TSLA")
+    company_name: Optional[str] = Field(None, example="Tesla, Inc.")
+    price: Optional[float] = Field(None, example=183.24)
+    market_cap: Optional[int] = Field(None, example=650000000000)
+    volume: Optional[int] = Field(None, example=23450000)
+
+
 # ── Sentiment Models ───────────────────────────────────────────────────────
 
 class HeadlineSentiment(BaseModel):
