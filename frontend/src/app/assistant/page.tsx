@@ -1,17 +1,22 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import StockComparison from "@/components/StockComparison";
 import {
   getDashboard,
   getCryptoMarket,
   getForexMarket,
   getPSXStocks,
   getRecommendations,
+  getStockComparison,
   type Recommendation,
 } from "@/lib/api";
 
+type Role = "user" | "assistant" | "system";
+type Language = "en" | "ur";
+
 type ChatMessage = {
-  id: string;
+  id?: string;
   role: Role;
   content: string;
   time: string;
@@ -22,6 +27,9 @@ type ChatMessage = {
     right: { ticker: string; price?: { price?: number; change_percent?: number } };
     analysis: { winner?: string; confidence?: number; summary?: string; left_reasons?: string[]; right_reasons?: string[] };
   };
+  data?: any;
+  urdu?: string | null;
+  showUrdu?: boolean;
 };
 
 const QUICK_COMMANDS = ["Top Picks", "Market Overview", "PSX Stocks", "My Portfolio"];
@@ -95,12 +103,6 @@ async function* parseSSEStream(stream: ReadableStream<Uint8Array>) {
   }
 }
 
-const QUICK_PROMPTS = [
-  "What is the outlook for PSX today?",
-  "Analyze AAPL for swing trade",
-  "ENGRO.KA ka trend batain",
-  "Compare NVDA and AMD",
-];
 
 export default function AssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -117,7 +119,7 @@ export default function AssistantPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
   const idCounterRef = useRef(0);
   const apiBase = useMemo(() => resolveApiBase(), []);
 
@@ -135,6 +137,10 @@ export default function AssistantPage() {
     scrollToBottom();
   };
 
+  const pushMessage = (message: Omit<ChatMessage, "id">) => {
+    addMessage({ id: nextId("assistant"), ...message });
+  };
+
   const updateAssistantMessage = (id: string, appendText: string) => {
     setMessages((prev) =>
       prev.map((msg) =>
@@ -147,6 +153,16 @@ export default function AssistantPage() {
       ),
     );
     scrollToBottom();
+  };
+
+  const handleCommand = (text: string) => {
+    if (loading) return;
+    sendMessage(text);
+  };
+
+  const handleSend = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    sendMessage(input);
   };
 
   const sendMessage = async (text: string) => {
@@ -186,16 +202,8 @@ export default function AssistantPage() {
       time: getNow(),
     });
 
-    const assistantId = nextId("assistant");
-    addMessage({
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      time: getNow(),
-    });
-
     try {
-      const lower = q.toLowerCase();
+      const lower = trimmed.toLowerCase();
       if (lower === "top picks") {
         const recs = await getRecommendations();
         pushMessage({
@@ -229,8 +237,8 @@ export default function AssistantPage() {
           time: new Date().toLocaleTimeString([], { hour12: false }),
         });
         setLoading(false);
-      } else if (/^[A-Za-z0-9\.-]{1,12}$/.test(q) && !q.includes(" ")) {
-        const ticker = q.toUpperCase();
+      } else if (/^[A-Za-z0-9\.-]{1,12}$/.test(trimmed) && !trimmed.includes(" ")) {
+        const ticker = trimmed.toUpperCase();
         const dashboard = await getDashboard(ticker);
         const rec = dashboard.recommendation as any;
         pushMessage({
@@ -243,13 +251,13 @@ export default function AssistantPage() {
         setLoading(false);
       } else {
         // Dynamic SSE Chat Streaming
-        const assistantTime = new Date().toLocaleTimeString([], { hour12: false });
-        
-        // Add placeholder message for streaming content
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: "", time: assistantTime }
-        ]);
+        const assistantId = nextId("assistant");
+        addMessage({
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          time: getNow(),
+        });
 
         const response = await fetch(`${process.env.NEXT_PUBLIC_ALPHAAI_API_BASE_URL ?? "http://localhost:8001/api/v1"}/chat`, {
           method: "POST",
@@ -257,8 +265,8 @@ export default function AssistantPage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            message: q,
-            language: "en"
+            message: trimmed,
+            language,
           }),
         });
 
@@ -266,12 +274,12 @@ export default function AssistantPage() {
           const fallbackError = response.status === 500
             ? "⚠️ AI backend not configured. Ask your team to add GROQ_API_KEY to backend/.env and restart the server."
             : `Chat request failed (${response.status})`;
-          
-          setMessages((prev) => {
-            const updated = [...prev];
-            updated[updated.length - 1].content = fallbackError;
-            return updated;
-          });
+
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantId ? { ...msg, content: fallbackError } : msg,
+            ),
+          );
           setLoading(false);
           return;
         }
@@ -294,20 +302,15 @@ export default function AssistantPage() {
               try {
                 const parsed = JSON.parse(dataStr);
                 if (parsed.text) {
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    const lastMsg = updated[updated.length - 1];
-                    lastMsg.content += parsed.text;
-                    return updated;
-                  });
+                  updateAssistantMessage(assistantId, parsed.text);
                 } else if (parsed.error) {
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    updated[updated.length - 1].content = `⚠️ Error: ${parsed.error}`;
-                    return updated;
-                  });
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantId ? { ...msg, content: `⚠️ Error: ${parsed.error}` } : msg,
+                    ),
+                  );
                 }
-              } catch (e) {
+              } catch {
                 // Ignore parsing errors for partial stream chunks
               }
             }
@@ -409,10 +412,10 @@ export default function AssistantPage() {
                       </p>
                     )}
                   </div>
-                  <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
-                    {msg.content || (loading && !isUser ? "Thinking..." : "")}
-                  </p>
-                </div>
+                )}
+                <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                  {msg.content || (loading && !isUser ? "Thinking..." : "")}
+                </p>
                 {msg.comparisonData ? <div style={{ marginTop: 8 }}><StockComparison data={msg.comparisonData} /></div> : null}
               </div>
             );

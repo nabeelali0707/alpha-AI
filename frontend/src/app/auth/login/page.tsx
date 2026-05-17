@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, FormEvent, Suspense } from 'react';
+import React, { useState, FormEvent, Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../context/AuthProvider';
 import { useToast } from '../../../components/Toast';
 
 function LoginForm() {
-  const { login, loginWithGoogle, loginWithGitHub } = useAuth();
+  const { login, loginWithGoogle, loginWithGitHub, loading, user, session } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();

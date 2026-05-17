@@ -108,6 +108,7 @@ export type Recommendation = {
   technical_indicators?: TechnicalIndicators | null;
   sentiment_summary?: SentimentSummary | null;
   price_data?: StockPrice | null;
+  win_probability?: number | null;
 };
 
 export type MarketItem = {
@@ -445,6 +446,85 @@ export async function getFearGreed() {
 
 export async function getPortfolioAdvice(payload: PortfolioAdvisorRequest) {
   const response = await alphaaiApi.post<AIEndpointResponse>("/analysis/portfolio-advisor", payload);
+  return response.data;
+}
+
+export type TermExplainerResponse = {
+  explanation: string;
+};
+
+export async function explainTermLLM(
+  term: string,
+  ticker = "AAPL",
+  experience_level = "beginner",
+  indicator_data = "",
+  language = "en",
+): Promise<TermExplainerResponse> {
+  const response = await alphaaiApi.post<TermExplainerResponse>("/ai/explain-term", {
+    term,
+    ticker,
+    experience_level,
+    indicator_data,
+    language,
+  });
+  return response.data;
+}
+
+export type ScamCheckResult = {
+  verdict: string;
+  red_flags: string[];
+  actual_data: string;
+  ticker?: string | null;
+};
+
+export async function checkScamTip(tipText: string, ticker = ""): Promise<ScamCheckResult> {
+  const response = await alphaaiApi.post<ScamCheckResult>("/ai/scam-check", {
+    tip_text: tipText,
+    ticker,
+    language: "en",
+  });
+  return response.data;
+}
+
+export async function getCryptoHistory(symbol: string, days = 30) {
+  const response = await alphaaiApi.get(`/live/crypto/history/${symbol}`, { params: { days } });
+  return response.data;
+}
+
+export async function getForexHistory(pair: string, days = 30) {
+  const response = await alphaaiApi.get(`/live/forex/history/${pair}`, { params: { days } });
+  return response.data;
+}
+
+export async function getStockComparison(tickerA: string, tickerB: string, language = "en") {
+  const response = await alphaaiApi.post(`/analysis/compare`, {
+    ticker_a: tickerA,
+    ticker_b: tickerB,
+    language
+  });
+  return response.data;
+}
+
+export const getStockPriceHistory = getStockHistory;
+
+export type PriceEvent = {
+  id: string;
+  ticker: string;
+  change_pct: number;
+  direction: string;
+  price: number;
+  explanation: string;
+};
+
+export async function getPriceEvents(limit = 6): Promise<PriceEvent[]> {
+  const response = await alphaaiApi.get<PriceEvent[]>("/events/price-events", {
+    params: { limit },
+  });
+  return response.data;
+}
+
+export async function dismissPriceEvent(eventId: string) {
+  const response = await alphaaiApi.delete(`/events/price-events/${eventId}`);
   return response.data;
 }
 

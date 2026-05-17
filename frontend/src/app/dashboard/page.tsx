@@ -23,6 +23,7 @@ import SectorHeatmap from '@/components/SectorHeatmap';
 import FearGreedGauge from '@/components/FearGreedGauge';
 import DailyBriefing from '@/components/DailyBriefing';
 import MarketNarrator from '@/components/MarketNarrator';
+import TermExplainer from '@/components/TermExplainer';
 
 const watchlist = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN'];
 
@@ -195,7 +196,7 @@ export default function Dashboard() {
             {symbol}
           </button>
         ))}
-      </div>
+      </motion.div>
 
       {error && (
         <motion.div
