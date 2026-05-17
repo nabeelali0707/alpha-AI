@@ -266,7 +266,7 @@ export default function StockChart({
   }
 
   return (
-    <div style={{ borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "#0f1629", padding: 12 }}>
+    <div style={{ width: "100%", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "#0f1629", padding: 12 }}>
       {showControls && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ color: "#9ca3af", fontSize: 12, fontWeight: 600 }}>Price Chart</div>

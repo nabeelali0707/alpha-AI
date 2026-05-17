@@ -270,7 +270,7 @@
   flex: 1;
   padding: 20px 30px;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   min-height: 300px;
 }
