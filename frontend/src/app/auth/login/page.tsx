@@ -1,13 +1,13 @@
 'use client';
 
-import React, { Suspense, useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../context/AuthProvider';
 import { useToast } from '../../../components/Toast';
 
 function LoginForm() {
-  const { login, loginWithGoogle, loginWithGitHub, user, session, loading } = useAuth();
+  const { login, loginWithGoogle, loginWithGitHub } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -268,7 +268,13 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+        <div style={{ color: 'var(--accent-green)', fontSize: 11, letterSpacing: '0.25em', textTransform: 'uppercase' }}>
+          Initializing Terminal Access...
+        </div>
+      </div>
+    }>
       <LoginForm />
     </Suspense>
   );

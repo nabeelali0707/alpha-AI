@@ -286,3 +286,24 @@ MIT License — See [LICENSE](LICENSE) for details.
 
 **Version:** 1.0 | **Status:** Production-Ready MVP  
 **Made with ❤️ for Pakistani investors & global traders**
+
+---
+
+## 🚀 Hackathon Checklist & Demo Walkthrough
+
+### 📋 Checklist
+- [x] **Supabase Setup**: `price_events` table configured with Row-Level Security.
+- [x] **Cyber-Terminal UI Gauge**: SVG-based semi-circle animated dial for dynamic sentiment categorization.
+- [x] **Daily Briefing Widget & Speech Synthesis**: Market narrative audio playback of AI-generated briefs.
+- [x] **Multi-Tab Terminal with Staggered Polling**: Rates and charts synced with staggered delays to mitigate 429 rate-limit floods.
+- [x] **Bespoke Portfolio Advisor Route**: Custom AI advisor POST route providing specific rebalancing insights.
+- [x] **SSE Streaming Assistant Terminals**: Streaming tokens direct from Groq / Gemini with clear fallback boundaries.
+
+### 🎭 Live Presentation Demo Script
+1. **Intro**: *"Welcome judges. This is AlphaAI, the ultimate cyber-terminal and risk analysis command center..."*
+2. **Dynamic Dashboard Overview**: Point to the daily briefing tape and click **LISTEN TO BRIEFING** to trigger natural SpeechSynthesis narration. Observe the interactive stock charts updating silently.
+3. **Sentiment Discovery**: Focus on the new **Fear & Greed Index Dial**. Watch the indicator needle rotate live and show the custom sentiment categorization.
+4. **Market Terminal Navigation**: Navigate to the **Markets** tab. Toggle between Interactive TradingView charts, Live Cryptocurrencies with green/red trend indicators, Forex pairs, and Index sentiment.
+5. **AI Streaming Assistant Command**: Open the **Assistant** panel. Click a quick prompt (e.g., *"Analyze AAPL for swing trade"*). Watch the response stream word-by-word via Server-Sent Events (SSE). Disable your API key to show the warning message!
+6. **Bespoke Portfolio Advisor**: Under **Portfolio**, ask the advisor for portfolio rebalancing strategies and see instant structured breakdown advice.
+

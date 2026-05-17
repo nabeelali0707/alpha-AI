@@ -15,15 +15,14 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { getDashboard, type DashboardResponse } from '@/lib/api';
+import { getDashboard, getFearGreed, type DashboardResponse } from '@/lib/api';
 import TickerTape from '@/components/TickerTape';
 import LiveTicker from '@/components/LiveTicker';
 import CandlestickChart from '@/components/CandlestickChart';
 import SectorHeatmap from '@/components/SectorHeatmap';
-import MarketNarrator from '@/components/MarketNarrator';
-import EventAlert from '@/components/EventAlert';
+import FearGreedGauge from '@/components/FearGreedGauge';
 import DailyBriefing from '@/components/DailyBriefing';
-import TermExplainer from '@/components/TermExplainer';
+import MarketNarrator from '@/components/MarketNarrator';
 
 const watchlist = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN'];
 
@@ -47,12 +46,39 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [fearGreed, setFearGreed] = useState<{ value: number; classification: string; explanation: string } | null>(null);
+  const [fgLoading, setFgLoading] = useState(true);
 
+  // Fear & Greed Index fetching
   useEffect(() => {
     let active = true;
+    async function loadFearGreed() {
+      try {
+        const res = await getFearGreed();
+        if (active) {
+          setFearGreed(res);
+        }
+      } catch (err) {
+        console.error('Failed to load fear-greed:', err);
+      } finally {
+        if (active) {
+          setFgLoading(false);
+        }
+      }
+    }
+    loadFearGreed();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-    async function loadDashboard() {
-      setLoading(true);
+  // Stock details fetching with 30s polling
+  useEffect(() => {
+    let active = true;
+    let intervalId: NodeJS.Timeout | null = null;
+
+    async function loadDashboard(showLoader = true) {
+      if (showLoader) setLoading(true);
       setError('');
 
       try {
@@ -68,18 +94,24 @@ export default function Dashboard() {
           setError(fetchError instanceof Error ? fetchError.message : 'Failed to load dashboard');
         }
       } finally {
-        if (active) {
+        if (active && showLoader) {
           setLoading(false);
         }
       }
     }
 
-    loadDashboard();
+    loadDashboard(true);
+
+    intervalId = setInterval(() => {
+      loadDashboard(false); // background poll silently
+    }, 30000);
 
     return () => {
       active = false;
+      if (intervalId) clearInterval(intervalId);
     };
   }, [ticker]);
+
 
   const price = data?.price;
   const technicals = data?.technical_indicators;
@@ -139,11 +171,16 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* AI Event Alerts — stocks that moved >3% */}
-      <EventAlert />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+        <DailyBriefing />
+        <MarketNarrator />
+      </div>
 
-      <div
-        className="mb-8 flex flex-wrap gap-3 animate-fadeInUp delay-100"
+      <motion.div
+        className="mb-8 flex flex-wrap gap-3"
+        initial="hidden"
+        animate="visible"
+        variants={sectionVariants}
       >
         {watchlist.map((symbol) => (
           <button
@@ -291,7 +328,17 @@ export default function Dashboard() {
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <SectorHeatmap />
+            <div className="flex flex-col gap-6">
+              <SectorHeatmap />
+              {fearGreed && (
+                <FearGreedGauge
+                  value={fearGreed.value}
+                  classification={fearGreed.classification}
+                  explanation={fearGreed.explanation}
+                  loading={fgLoading}
+                />
+              )}
+            </div>
             <div className="grid gap-6">
               <div className="glass-card hover-lift rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
                 <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Price Range Analysis</p>

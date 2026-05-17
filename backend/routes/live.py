@@ -174,3 +174,152 @@ async def get_market_overview():
     except Exception as e:
         logger.error(f"Error fetching market overview: {e}")
         return {"error": str(e), "status": "error"}
+
+
+# ============ Real-time WebSocket Telemetry ============
+
+from fastapi import WebSocket, WebSocketDisconnect
+from datetime import datetime
+import json
+import yfinance as yf
+
+class ConnectionManager:
+    """Manages active live-market WebSocket client channels."""
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info("New WebSocket client successfully established secure channel.")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info("WebSocket client session channel disconnected.")
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+async def send_market_data(websocket: WebSocket, symbols: list[str]):
+    """Fetches real-time price updates from live market providers and feeds client."""
+    payload = {}
+    for sym in symbols:
+        try:
+            sym_upper = sym.upper().strip()
+            if "PKR" in sym_upper or "/" in sym_upper or "-" in sym_upper and not sym_upper.endswith("-USD"):
+                # Forex pair (e.g. USD/PKR, EUR/USD)
+                clean_pair = sym_upper.replace("-", "/")
+                pair_data = await LiveMarketService.get_forex_rate(clean_pair)
+                if pair_data:
+                    payload[sym_upper] = {
+                        "type": "forex",
+                        "price": float(pair_data.get("rate", 0)),
+                        "change": 0.0,
+                        "change_percent": 0.0
+                    }
+            elif sym_upper in ["BTC-USD", "ETH-USD", "SOL-USD", "BTC", "ETH", "SOL"]:
+                # Cryptocurrencies
+                crypto_id = sym_upper.replace("-USD", "")
+                crypto_data = await LiveMarketService.get_crypto_price(crypto_id, "usd")
+                if crypto_data:
+                    payload[sym_upper] = {
+                        "type": "crypto",
+                        "price": float(crypto_data.get("price", 0)),
+                        "change": float(crypto_data.get("change_24h", 0)),
+                        "change_percent": float(crypto_data.get("change_24h", 0))
+                    }
+            else:
+                # Standard Stock Tickers (yfinance US or local PSX symbols)
+                stock = yf.Ticker(sym_upper)
+                fast_info = getattr(stock, "fast_info", None)
+                price = None
+                prev_close = None
+                
+                if fast_info:
+                    price = fast_info.get("last_price")
+                    prev_close = fast_info.get("previous_close")
+                    
+                if price is None:
+                    # Fallback to general history
+                    hist = stock.history(period="2d")
+                    if len(hist) >= 2:
+                        price = hist["Close"].iloc[-1]
+                        prev_close = hist["Close"].iloc[-2]
+                
+                if price is not None and prev_close is not None:
+                    change = price - prev_close
+                    change_pct = (change / prev_close) * 100.0
+                    payload[sym_upper] = {
+                        "type": "stock",
+                        "price": round(float(price), 2),
+                        "change": round(float(change), 2),
+                        "change_percent": round(float(change_pct), 2)
+                    }
+        except Exception as e:
+            logger.error(f"Error fetching real-time feed for ticker {sym} inside WS worker: {e}")
+
+    if payload:
+        await websocket.send_json({
+            "event": "market_update",
+            "data": payload,
+            "timestamp": datetime.now().isoformat()
+        })
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time market subscriptions.
+    Clients subscribe via: {"action": "subscribe", "symbols": ["AAPL", "BTC-USD"]}
+    """
+    await manager.connect(websocket)
+    subscriptions = set()
+    try:
+        async def client_listener():
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    parsed = json.loads(data)
+                    action = parsed.get("action")
+                    symbols = parsed.get("symbols", [])
+                    if action == "subscribe":
+                        for sym in symbols:
+                            subscriptions.add(sym.upper())
+                        logger.info(f"WS Subscribed symbols: {list(subscriptions)}")
+                        # Send instant update
+                        await send_market_data(websocket, list(subscriptions))
+                    elif action == "unsubscribe":
+                        for sym in symbols:
+                            subscriptions.discard(sym.upper())
+                        logger.info(f"WS Unsubscribed: {symbols}")
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.error(f"WS client listener exception: {e}")
+
+        async def data_sender():
+            try:
+                while True:
+                    if subscriptions:
+                        await send_market_data(websocket, list(subscriptions))
+                    await asyncio.sleep(5) # High frequency updates every 5 seconds
+            except WebSocketDisconnect:
+                pass
+            except Exception as e:
+                logger.error(f"WS data sender exception: {e}")
+
+        # Concurrently route incoming messages and stream outgoing market pricing
+        await asyncio.gather(client_listener(), data_sender())
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+    except Exception as e:
+        manager.disconnect(websocket)
+        logger.error(f"WS root endpoint exception: {e}")
+

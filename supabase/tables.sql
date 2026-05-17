@@ -102,3 +102,30 @@ create table if not exists public.portfolio_history (
   portfolio_value numeric not null,
   recorded_at timestamptz default now()
 );
+
+-- Price Events table for tracking significant market movements
+create table if not exists public.price_events (
+  id uuid default gen_random_uuid() primary key,
+  ticker text not null,
+  change_pct numeric not null,
+  direction text not null,
+  price numeric not null,
+  explanation text,
+  dismissed boolean default false,
+  created_at timestamptz default now()
+);
+
+-- Enable RLS
+alter table public.price_events enable row level security;
+
+-- Policy for anyone to read events (since public dashboard can show alerts)
+create policy "Allow public read access to price_events" 
+  on public.price_events for select 
+  using (true);
+
+-- Policy for backend/service role to insert events
+create policy "Allow service_role to manage price_events" 
+  on public.price_events for all 
+  using (true) 
+  with check (true);
+

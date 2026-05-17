@@ -354,134 +354,55 @@ async def get_urdu_recommendation(symbol: str):
         return {"error": "اسٹاک کی تجویز بنانے میں خرابی"}
 
 
-@router.post("/chat")
-async def llm_chat(payload: ChatRequest):
-    prompt = build_stock_chat_prompt(
-        ticker=payload.ticker.upper(),
-        price=payload.price,
-        rsi=payload.rsi,
-        rsi_signal=payload.rsi_signal,
-        macd_signal=payload.macd_signal,
-        ma_trend=payload.ma_trend,
-        sentiment_label=payload.sentiment_label,
-        sentiment_score=payload.sentiment_score,
-        total_articles=payload.total_articles,
-        recommendation=payload.recommendation,
-        confidence=payload.confidence,
-        reasons=payload.reasons,
-        question=payload.question,
-        language_hint=payload.language,
+# ── Portfolio Advisor & Daily Briefing ──────────────────────────────────────
+
+from pydantic import BaseModel
+from typing import Optional
+from services.llm_service import LLMService
+
+class PortfolioAdvisorRequest(BaseModel):
+    holdings_json: str
+    total_value: Optional[str] = None
+    total_pnl: Optional[str] = None
+    pnl_percent: Optional[str] = None
+    top_sector: Optional[str] = None
+    question: Optional[str] = None
+    language: Optional[str] = "en"
+
+@router.post("/portfolio-advisor", summary="Get customized AI advice on a portfolio")
+async def get_portfolio_advice(payload: PortfolioAdvisorRequest):
+    """
+    Analyzes the user's holdings and portfolio metrics to generate bespoke rebalancing advice.
+    """
+    system_prompt = (
+        "You are the AlphaAI Premium Portfolio Advisor. "
+        "Analyze the provided portfolio composition and provide clear, professional, "
+        "and actionable investment insights. Be extremely precise."
     )
-    response = await llm_service.complete(prompt, max_tokens=500, preferred_provider="groq")
-    return {"prompt": prompt, "response": response}
-
-
-@router.post("/portfolio-advisor")
-async def portfolio_advisor(payload: PortfolioAdvisorRequest):
-    prompt = build_portfolio_advisor_prompt(
-        holdings_json=payload.holdings_json,
-        total_value=payload.total_value,
-        total_pnl=payload.total_pnl,
-        pnl_percent=payload.pnl_percent,
-        top_sector=payload.top_sector,
-        question=payload.question,
-        language_hint=payload.language,
+    prompt = (
+        f"Portfolio Data:\n"
+        f"- Holdings: {payload.holdings_json}\n"
+        f"- Total Value: {payload.total_value or 'N/A'}\n"
+        f"- Total Profit/Loss: {payload.total_pnl or 'N/A'} ({payload.pnl_percent or 'N/A'})\n"
+        f"- Top Sector: {payload.top_sector or 'N/A'}\n\n"
+        f"User Question:\n{payload.question or 'Analyze my portfolio allocation and provide actionable rebalancing suggestions.'}"
     )
-    response = await llm_service.complete(prompt, max_tokens=450, preferred_provider="gemini")
-    return {"prompt": prompt, "response": response}
+    if payload.language == "ur":
+        prompt += "\nPlease respond in highly professional Urdu."
 
+    response_text = await LLMService.complete(prompt, system_prompt)
+    return {"response": response_text}
 
-@router.post("/news-summary")
-async def news_summary(payload: NewsSummaryRequest):
-    prompt = build_news_summary_prompt(payload.ticker.upper(), payload.headlines)
-    response = await llm_service.complete(
-        prompt,
-        response_format="json",
-        max_tokens=500,
-        preferred_provider="gemini",
+@router.get("/daily-briefing", summary="Get Daily AI Market Briefing")
+async def get_daily_briefing():
+    """
+    Generates a concise, single-sentence market briefing summarizing international and local exchange trends.
+    """
+    system_prompt = (
+        "You are the AlphaAI Market Narrator. "
+        "Compile a single, punchy, informative sentence summarizing the market outlook. Do not include markdown."
     )
-    return {"prompt": prompt, "response": response}
+    prompt = "Synthesize today's market momentum including tech indices and PSX activity."
+    briefing = await LLMService.complete(prompt, system_prompt)
+    return {"briefing": briefing}
 
-
-@router.post("/urdu-explanation")
-async def urdu_explanation(payload: UrduExplanationRequest):
-    prompt = build_urdu_explanation_prompt(
-        ticker=payload.ticker.upper(),
-        signal=payload.signal,
-        confidence=payload.confidence,
-        rsi_value=payload.rsi_value,
-        rsi_signal=payload.rsi_signal,
-        sentiment_label=payload.sentiment_label,
-        ma_trend=payload.ma_trend,
-        top_reason=payload.top_reason,
-    )
-    response = await llm_service.complete(prompt, max_tokens=220, preferred_provider="anthropic")
-    return {"prompt": prompt, "response": response}
-
-
-@router.post("/sector-heatmap")
-async def sector_heatmap(payload: SectorHeatmapRequest):
-    prompt = build_sector_heatmap_prompt(payload.sector, payload.stock_sentiment_list)
-    response = await llm_service.complete(
-        prompt,
-        response_format="json",
-        max_tokens=200,
-        preferred_provider="gemini",
-    )
-    return {"prompt": prompt, "response": response}
-
-
-@router.post("/earnings")
-async def earnings_preview(payload: EarningsRequest):
-    prompt = build_earnings_prompt(
-        ticker=payload.ticker.upper(),
-        days_until=payload.days_until,
-        beat_1=payload.beat_1,
-        move_1=payload.move_1,
-        beat_miss_2=payload.beat_miss_2,
-        beat_2=payload.beat_2,
-        move_2=payload.move_2,
-        beat_miss_3=payload.beat_miss_3,
-        beat_3=payload.beat_3,
-        move_3=payload.move_3,
-        beat_miss_4=payload.beat_miss_4,
-        beat_4=payload.beat_4,
-        move_4=payload.move_4,
-        sentiment_label=payload.sentiment_label,
-        recommendation=payload.recommendation,
-    )
-    response = await llm_service.complete(prompt, max_tokens=300, preferred_provider="groq")
-    return {"prompt": prompt, "response": response}
-
-
-@router.post("/macro-context")
-async def macro_context(payload: MacroRequest):
-    prompt = build_pakistan_macro_prompt(
-        ticker=payload.ticker.upper(),
-        sector=payload.sector,
-        sbp_rate=payload.sbp_rate,
-        usd_pkr=payload.usd_pkr,
-        inflation=payload.inflation,
-        kse100=payload.kse100,
-        kse_change=payload.kse_change,
-        user_language=payload.language,
-    )
-    response = await llm_service.complete(prompt, max_tokens=250, preferred_provider="groq")
-    return {"prompt": prompt, "response": response}
-
-
-@router.post("/risk-analyzer")
-async def risk_analyzer(payload: RiskAnalyzerRequest):
-    prompt = build_risk_analyzer_prompt(
-        holdings_json=payload.holdings_json,
-        max_weight=payload.max_weight,
-        max_stock=payload.max_stock,
-        top_sector=payload.top_sector,
-        sector_weight=payload.sector_weight,
-        most_volatile=payload.most_volatile,
-        beta=payload.beta,
-        pnl=payload.pnl,
-        language_hint=payload.language,
-    )
-    response = await llm_service.complete(prompt, max_tokens=250, preferred_provider="gemini")
-    return {"prompt": prompt, "response": response}

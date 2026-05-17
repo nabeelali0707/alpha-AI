@@ -29,12 +29,16 @@ const OverviewCards: React.FC<OverviewCardsProps> = ({ summary, loading }) => {
       title: "Best Performing Asset",
       value: summary?.best_performing_asset || "None",
       isText: true,
+      change: 0,
+      changePercent: 0,
       label: "Top Performer",
     },
     {
       title: "Worst Performing Asset",
       value: summary?.worst_performing_asset || "None",
       isText: true,
+      change: 0,
+      changePercent: 0,
       label: "Underperformer",
     },
   ];

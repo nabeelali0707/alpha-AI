@@ -1,106 +1,64 @@
-"use client";
+import { useState, useEffect, useRef } from "react";
+import { alphaaiApi } from "@/lib/api";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-
-type PollingState<T> = {
-  data: T | null;
-  error: string | null;
-  loading: boolean;
-  refetch: () => Promise<void>;
-};
-
-function resolveBaseUrl() {
-  const rawBase = process.env.NEXT_PUBLIC_ALPHAAI_API_BASE_URL ?? "http://localhost:8001/api/v1";
-
-  if (/^https?:\/\//i.test(rawBase)) {
-    return rawBase;
-  }
-
-  if (rawBase.startsWith(":")) {
-    return `http://localhost${rawBase}`;
-  }
-
-  return `http://${rawBase}`;
-}
-
-/**
- * Generic polling hook with stagger support.
- *
- * @param url        API path (appended to base URL)
- * @param intervalMs Time between each poll cycle
- * @param delayMs    Initial delay before the first fetch (use this to stagger
- *                   multiple polling hooks so they don't all fire at once)
- * @param options    Optional RequestInit for the fetch call
- */
-export function usePolling<T>(
-  url: string | null,
-  intervalMs: number,
-  delayMs: number = 0,
-  options?: RequestInit,
-): PollingState<T> {
+export function usePolling<T>(url: string, intervalMs: number, delayMs = 0) {
   const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(Boolean(url));
-  const mountedRef = useRef(true);
 
-  const refetch = useCallback(async () => {
-    if (!url) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const base = resolveBaseUrl();
-      const finalUrl = url.startsWith("http") ? url : `${base}${url.startsWith("/") ? "" : "/"}${url}`;
-      const response = await fetch(finalUrl, options);
-      if (!response.ok) {
-        throw new Error(`Polling request failed (${response.status})`);
-      }
-      const json = (await response.json()) as T;
-      if (mountedRef.current) {
-        setData(json);
-      }
-    } catch (err) {
-      if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : "Polling failed");
-    } finally {
-      if (mountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [url, options]);
+  const urlRef = useRef(url);
+  urlRef.current = url;
 
   useEffect(() => {
-    mountedRef.current = true;
-    if (!url) {
-      setLoading(false);
-      setData(null);
-      setError(null);
-      return () => {
-        mountedRef.current = false;
-      };
+    let active = true;
+    let delayTimer: NodeJS.Timeout | null = null;
+    let intervalTimer: NodeJS.Timeout | null = null;
+
+    async function fetchData() {
+      try {
+        const response = await alphaaiApi.get<T>(urlRef.current);
+        if (active) {
+          setData(response.data);
+          setError(null);
+        }
+      } catch (err: any) {
+        if (active) {
+          setError(err.response?.data?.detail || err.message || "Error polling data");
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
     }
 
-    // Staggered start: wait `delayMs` before the first fetch + interval
-    let intervalId: ReturnType<typeof setInterval> | null = null;
-
-    const timeoutId = setTimeout(() => {
-      // Initial fetch after delay
-      void refetch();
-      // Then repeat at the configured interval
-      intervalId = setInterval(() => {
-        void refetch();
-      }, intervalMs);
+    // Delayed start
+    delayTimer = setTimeout(() => {
+      fetchData();
+      
+      // Setup interval after the first fetch completes
+      intervalTimer = setInterval(fetchData, intervalMs);
     }, delayMs);
 
     return () => {
-      mountedRef.current = false;
-      clearTimeout(timeoutId);
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-      }
+      active = false;
+      if (delayTimer) clearTimeout(delayTimer);
+      if (intervalTimer) clearInterval(intervalTimer);
     };
-  }, [url, intervalMs, delayMs, refetch]);
+  }, [intervalMs, delayMs]);
 
-  return { data, error, loading, refetch };
+  const refetch = async () => {
+    setLoading(true);
+    try {
+      const response = await alphaaiApi.get<T>(urlRef.current);
+      setData(response.data);
+      setError(null);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message || "Error refetching data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { data, loading, error, refetch };
 }

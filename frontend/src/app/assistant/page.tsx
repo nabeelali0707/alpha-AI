@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
-import ScamDetector from "@/components/ScamDetector";
-import StockComparison from "@/components/StockComparison";
-import { getStockComparison } from "@/lib/api";
-
-type Role = "assistant" | "user";
+import React, { useState, useRef, useEffect } from "react";
+import {
+  getDashboard,
+  getCryptoMarket,
+  getForexMarket,
+  getPSXStocks,
+  getRecommendations,
+  type Recommendation,
+} from "@/lib/api";
 
 type ChatMessage = {
   id: string;
@@ -21,7 +24,18 @@ type ChatMessage = {
   };
 };
 
-type Language = "en" | "ur";
+const QUICK_COMMANDS = ["Top Picks", "Market Overview", "PSX Stocks", "My Portfolio"];
+
+const QUICK_PROMPTS = [
+  "What is the outlook for PSX today?",
+  "Analyze AAPL for swing trade",
+  "ENGRO.KA ka trend batain",
+  "Compare NVDA and AMD",
+  "Is now a good time to buy TSLA?",
+  "NVDA mein invest karna chahiye?",
+];
+
+const INITIAL_ASSISTANT_TIME = "00:00:00";
 
 type StreamEvent = {
   type: "token" | "thought" | "done" | "error";
@@ -90,19 +104,18 @@ const QUICK_PROMPTS = [
 
 export default function AssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "init",
-      role: "assistant",
-      content:
-        "AlphaAI is online. Ask in natural language: stock outlook, comparison, risk, entry timing, or portfolio ideas.",
-      time: getNow(),
-    },
+    { role: "assistant", content: "Neural Core ready. Try AAPL, ENGRO.KA, top picks, or ask a question directly below.", time: INITIAL_ASSISTANT_TIME },
   ]);
   const [thoughtLog, setThoughtLog] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [language, setLanguage] = useState<Language>("en");
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"chat" | "verify">("chat");
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat area
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const idCounterRef = useRef(0);
@@ -182,130 +195,219 @@ export default function AssistantPage() {
     });
 
     try {
-      const response = await fetch(`${apiBase}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: trimmed,
-          ticker: detectTicker(trimmed),
-          language,
-        }),
-      });
-
-      if (!response.ok || !response.body) {
-        const fallbackError = `Chat request failed (${response.status})`;
-        updateAssistantMessage(assistantId, fallbackError);
-        setThoughtLog((prev) => [...prev, fallbackError]);
+      const lower = q.toLowerCase();
+      if (lower === "top picks") {
+        const recs = await getRecommendations();
+        pushMessage({
+          role: "assistant",
+          content: "Top AI recommendations extracted from financial models.",
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+          data: recs[0] ?? null,
+        });
         setLoading(false);
-        return;
-      }
+      } else if (lower === "market overview") {
+        const [crypto, forex] = await Promise.all([getCryptoMarket(), getForexMarket()]);
+        pushMessage({
+          role: "assistant",
+          content: `Markets synchronized successfully. Active Crypto: ${crypto.length} currencies, Forex: ${forex.length} pairs.`,
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+        });
+        setLoading(false);
+      } else if (lower === "psx stocks") {
+        const psx = await getPSXStocks();
+        const top = psx.slice(0, 5).map((item) => `${item.symbol} Rs.${item.price.toFixed(2)} (${item.change_percent.toFixed(2)}%)`).join(" | ");
+        pushMessage({
+          role: "assistant",
+          content: `PSX Ticker Snapshot: ${top}`,
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+        });
+        setLoading(false);
+      } else if (lower === "my portfolio") {
+        pushMessage({
+          role: "assistant",
+          content: "Please log in to inspect custom portfolio performance. Navigate to the Portfolio tab.",
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+        });
+        setLoading(false);
+      } else if (/^[A-Za-z0-9\.-]{1,12}$/.test(q) && !q.includes(" ")) {
+        const ticker = q.toUpperCase();
+        const dashboard = await getDashboard(ticker);
+        const rec = dashboard.recommendation as any;
+        pushMessage({
+          role: "assistant",
+          content: `${ticker} technical analysis and risk rating generated.`,
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+          data: rec ?? null,
+          urdu: rec?.urdu_explanation ?? null,
+        });
+        setLoading(false);
+      } else {
+        // Dynamic SSE Chat Streaming
+        const assistantTime = new Date().toLocaleTimeString([], { hour12: false });
+        
+        // Add placeholder message for streaming content
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "", time: assistantTime }
+        ]);
 
-      for await (const event of parseSSEStream(response.body)) {
-        if (event.type === "thought" && event.message) {
-          setThoughtLog((prev) => [...prev, event.message as string]);
+        const response = await fetch(`${process.env.NEXT_PUBLIC_ALPHAAI_API_BASE_URL ?? "http://localhost:8001/api/v1"}/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: q,
+            language: "en"
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          const fallbackError = response.status === 500
+            ? "⚠️ AI backend not configured. Ask your team to add GROQ_API_KEY to backend/.env and restart the server."
+            : `Chat request failed (${response.status})`;
+          
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1].content = fallbackError;
+            return updated;
+          });
+          setLoading(false);
+          return;
         }
 
-        if (event.type === "token" && event.token) {
-          updateAssistantMessage(assistantId, event.token);
-        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-        if (event.type === "error") {
-          const errText = event.message ?? "Streaming error";
-          setThoughtLog((prev) => [...prev, errText]);
-          if (!messages.find((m) => m.id === assistantId)?.content) {
-            updateAssistantMessage(assistantId, errText);
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6).trim();
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.text) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const lastMsg = updated[updated.length - 1];
+                    lastMsg.content += parsed.text;
+                    return updated;
+                  });
+                } else if (parsed.error) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    updated[updated.length - 1].content = `⚠️ Error: ${parsed.error}`;
+                    return updated;
+                  });
+                }
+              } catch (e) {
+                // Ignore parsing errors for partial stream chunks
+              }
+            }
           }
         }
-
-        if (event.type === "done") {
-          break;
-        }
+        setLoading(false);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown chat error";
-      setThoughtLog((prev) => [...prev, message]);
-      updateAssistantMessage(assistantId, message);
-    } finally {
+      pushMessage({
+        role: "assistant",
+        content: error instanceof Error ? error.message : "Failed to fetch backend analysis stream.",
+        time: new Date().toLocaleTimeString([], { hour12: false }),
+      });
       setLoading(false);
     }
   };
 
   return (
-    <div
-      className="container page-enter"
-      style={{
-        paddingTop: "var(--spacing-md)",
-        minHeight: "calc(100vh - 160px)",
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) 320px",
-        gap: "var(--spacing-md)",
-      }}
-    >
-      <div
-        className="glass"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: "72vh",
-          padding: "var(--spacing-md)",
-        }}
-      >
-        <div style={{ marginBottom: "var(--spacing-md)" }}>
-          <h1 className="headline-lg">AI Assistant</h1>
-          <p className="data-mono" style={{ opacity: 0.6 }}>
-            LLM MODE • SSE STREAMING • NATURAL LANGUAGE ENABLED
-          </p>
-        </div>
+    <div className="container" style={{ paddingTop: "var(--spacing-md)", height: "calc(100vh - 180px)", display: "flex", flexDirection: "column" }}>
+      <div style={{ marginBottom: "var(--spacing-md)" }}>
+        <h1 className="headline-lg">AI Assistant</h1>
+        <p className="data-mono text-[#00ff41]" style={{ opacity: 0.8, fontSize: "11px", letterSpacing: "0.15em" }}>
+          LLM MODE • SSE STREAMING • NATURAL LANGUAGE ENABLED
+        </p>
+      </div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <button className="btn btn-outline" onClick={() => setActiveTab("chat")} style={{ padding: "8px 12px", borderColor: activeTab === "chat" ? "#0a84ff" : undefined, color: activeTab === "chat" ? "#0a84ff" : undefined }}>
-            Chat
-          </button>
-          <button className="btn btn-outline" onClick={() => setActiveTab("verify")} style={{ padding: "8px 12px", borderColor: activeTab === "verify" ? "#ff3131" : undefined, color: activeTab === "verify" ? "#ff3131" : undefined }}>
-            Verify a Tip
-          </button>
-        </div>
-
-        {activeTab === "verify" ? <ScamDetector /> : null}
-
-        <div style={{ display: activeTab === "chat" ? "flex" : "none", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          {QUICK_PROMPTS.map((prompt) => (
+      <div className="glass" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", padding: "var(--spacing-md)", borderRadius: "var(--radius-lg)" }}>
+        
+        {/* Navigation Quick Commands */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+          {QUICK_COMMANDS.map((cmd) => (
             <button
-              key={prompt}
-              className="btn btn-outline"
-              onClick={() => void sendMessage(prompt)}
+              key={cmd}
+              onClick={() => handleCommand(cmd)}
               disabled={loading}
-              style={{ padding: "6px 12px", fontSize: 12 }}
+              className="btn btn-outline"
+              style={{ padding: "6px 14px", fontSize: 11, borderRadius: "20px" }}
             >
-              {prompt}
+              ⚡ {cmd}
             </button>
           ))}
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            paddingBottom: 12,
-          }}
-        >
-          {messages.map((msg) => {
+        {/* Scrollable Conversation History */}
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "var(--spacing-md)", paddingBottom: "var(--spacing-md)", paddingRight: "6px" }}>
+          {messages.map((msg, i) => {
             const isUser = msg.role === "user";
             return (
-              <div key={msg.id} style={{ maxWidth: "88%", marginLeft: isUser ? "auto" : 0 }}>
-                <div
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    background: isUser ? "rgba(0,255,65,0.08)" : "rgba(15,22,41,0.9)",
-                    border: `1px solid ${isUser ? "rgba(0,255,65,0.35)" : "rgba(255,255,255,0.08)"}`,
-                  }}
-                >
-                  <div className="data-mono" style={{ fontSize: 10, opacity: 0.6, marginBottom: 6 }}>
-                    {isUser ? "OPERATOR" : "ALPHAAI"} {"//"} {msg.time}
+              <div
+                key={i}
+                style={{
+                  maxWidth: "85%",
+                  alignSelf: isUser ? "flex-end" : "flex-start",
+                  padding: "14px 18px",
+                  borderRadius: "16px",
+                  background: isUser ? "rgba(0, 255, 65, 0.08)" : "rgba(10, 15, 30, 0.85)",
+                  border: `1px solid ${isUser ? "rgba(0, 255, 65, 0.3)" : "rgba(255, 255, 255, 0.08)"}`,
+                  boxShadow: isUser ? "0 0 10px rgba(0, 255, 65, 0.05)" : "none",
+                }}
+              >
+                <div className="data-mono" style={{ fontSize: "10px", marginBottom: "8px", opacity: 0.6, color: isUser ? "var(--accent-green)" : "var(--accent-blue)" }}>
+                  {isUser ? "OPERATOR" : "NEURAL_CORE"} // {msg.time}
+                </div>
+                <p style={{ lineHeight: 1.6, fontSize: "13px", whiteSpace: "pre-wrap" }}>{msg.content}</p>
+                
+                {msg.data && (
+                  <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>Analysis Signal</span>
+                      <span style={{
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: msg.data.recommendation === "BUY" ? "var(--accent-green)" : msg.data.recommendation === "SELL" ? "var(--accent-red)" : "var(--accent-blue)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                      }}>
+                        {msg.data.recommendation}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 8, height: 6, background: "rgba(255, 255, 255, 0.08)", borderRadius: 999 }}>
+                      <div style={{ height: "100%", width: `${(msg.data.confidence ?? 0) * 100}%`, background: "var(--accent-green)", borderRadius: 999 }} />
+                    </div>
+                    <p style={{ marginTop: 8, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>{msg.data.explanation}</p>
+                    
+                    {msg.urdu && (
+                      <button
+                        onClick={() => {
+                          setMessages((prev) => prev.map((m, idx) => idx === i ? { ...m, showUrdu: !m.showUrdu } : m));
+                        }}
+                        style={{ marginTop: 8, fontSize: 11, border: "1px solid rgba(255, 255, 255, 0.12)", background: "rgba(255, 255, 255, 0.04)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", color: "var(--text-secondary)" }}
+                      >
+                        {msg.showUrdu ? "View in English" : "اردو میں دیکھیں"}
+                      </button>
+                    )}
+                    {msg.showUrdu && msg.urdu && (
+                      <p style={{ marginTop: 8, fontSize: 12, color: "var(--text-secondary)", direction: "rtl", textAlign: "right", fontFamily: "var(--font-urdu)", lineHeight: 1.6 }}>
+                        {msg.urdu}
+                      </p>
+                    )}
                   </div>
                   <p style={{ margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
                     {msg.content || (loading && !isUser ? "Thinking..." : "")}
@@ -318,48 +420,59 @@ export default function AssistantPage() {
           <div ref={chatEndRef} />
         </div>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void sendMessage(input);
-          }}
-          style={{
-            display: "flex",
-            gap: 10,
-            borderTop: "1px solid var(--outline-variant)",
-            paddingTop: 12,
-          }}
-        >
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value as Language)}
-            style={{
-              background: "rgba(0,0,0,0.3)",
-              border: "1px solid var(--outline)",
-              borderRadius: 10,
-              color: "white",
-              padding: "0 10px",
-            }}
-          >
-            <option value="en">EN</option>
-            <option value="ur">UR</option>
-          </select>
+        {/* Demo Quick Prompts Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "8px", margin: "12px 0" }}>
+          {QUICK_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              onClick={() => handleCommand(prompt)}
+              disabled={loading}
+              style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.06)",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                color: "#dae2fd",
+                fontSize: "11px",
+                textAlign: "left",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(0, 255, 65, 0.05)";
+                e.currentTarget.style.borderColor = "rgba(0, 255, 65, 0.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.02)";
+                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.06)";
+              }}
+            >
+              💡 "{prompt}"
+            </button>
+          ))}
+        </div>
+
+        {/* Input Form */}
+        <form onSubmit={handleSend} style={{ display: "flex", gap: "var(--spacing-sm)", paddingTop: "var(--spacing-md)", borderTop: "1px solid var(--outline-variant)" }}>
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask anything about stocks, PSX, crypto, risk, or comparisons"
+            placeholder="Ask neural model a financial question or check scanner anomalies..."
+            disabled={loading}
             style={{
               flex: 1,
-              background: "rgba(0,0,0,0.3)",
+              background: "rgba(0, 0, 0, 0.4)",
               border: "1px solid var(--outline)",
-              borderRadius: 10,
-              padding: "12px",
+              borderRadius: "var(--radius-sm)",
+              padding: "12px 16px",
               color: "white",
+              fontSize: "13px",
+              fontFamily: "var(--font-body)",
             }}
           />
-          <button type="submit" className="btn btn-primary" disabled={loading} style={{ padding: "0 18px" }}>
-            {loading ? "RUNNING" : "SEND"}
+          <button type="submit" disabled={loading} className="btn btn-primary" style={{ padding: "0 28px", borderRadius: "var(--radius-sm)" }}>
+            {loading ? "STREAMING" : "EXECUTE"}
           </button>
         </form>
       </div>

@@ -1,127 +1,100 @@
-"""
-Optional LLM provider wrapper with deterministic fallbacks.
-Supports Groq, Anthropic, and Gemini when keys are configured.
-"""
-
-from __future__ import annotations
-
-import json
 import logging
-from typing import Any, Dict, Optional, Sequence
-
 import httpx
-
+import os
 from utils.config import settings
 
-logger = logging.getLogger(__name__)
-
+logger = logging.getLogger("alphaai.services.llm")
 
 class LLMService:
-    def __init__(self) -> None:
-        self.groq_api_key = settings.groq_api_key.strip()
-        self.anthropic_api_key = settings.anthropic_api_key.strip()
-        self.gemini_api_key = settings.gemini_api_key.strip()
+    @staticmethod
+    async def complete(prompt: str, system_prompt: str = "You are AlphaAI, an advanced stock market AI assistant.") -> str:
+        """
+        Perform a LLM chat completion using Groq with model and platform fallbacks.
+        """
+        # Read GROQ_API_KEY from environment or settings
+        api_key = os.getenv("GROQ_API_KEY")
+        
+        if not api_key:
+            # Platform fallback: Google Gemini
+            gemini_key = os.getenv("GEMINI_API_KEY") or getattr(settings, "google_api_key", None)
+            if gemini_key:
+                logger.info("GROQ_API_KEY not configured. Falling back to Gemini API.")
+                return await LLMService._complete_gemini(prompt, system_prompt, gemini_key)
+            
+            logger.warning("No AI API keys configured. Returning simulated AI response.")
+            return "AlphaAI AI engine is currently unconfigured. Please check backend/.env configuration."
 
-    async def complete(
-        self,
-        prompt: str,
-        *,
-        response_format: str = "text",
-        max_tokens: int = 700,
-        preferred_provider: Optional[str] = None,
-    ) -> str:
-        providers = self._provider_order(preferred_provider)
-        for provider in providers:
+        # Groq API Headers
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Models to try sequentially on failure
+        models = ["llama-3.1-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"]
+        
+        for model in models:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2,
+                "max_tokens": 800
+            }
+            
             try:
-                if provider == "groq" and self.groq_api_key:
-                    return await self._complete_groq(prompt, response_format=response_format, max_tokens=max_tokens)
-                if provider == "anthropic" and self.anthropic_api_key:
-                    return await self._complete_anthropic(prompt, response_format=response_format, max_tokens=max_tokens)
-                if provider == "gemini" and self.gemini_api_key:
-                    return await self._complete_gemini(prompt, response_format=response_format, max_tokens=max_tokens)
-            except Exception as exc:
-                logger.warning("%s completion failed: %s", provider.title(), exc)
-
-        return self._fallback(prompt, response_format=response_format)
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        json=payload,
+                        headers=headers
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        content = result["choices"][0]["message"]["content"]
+                        logger.info(f"Groq API call succeeded using model {model}.")
+                        return content
+                    else:
+                        logger.warning(f"Groq model {model} returned status {response.status_code}: {response.text}")
+            except Exception as e:
+                logger.error(f"Failed calling Groq model {model}: {e}")
+                
+        # If all Groq models fail, attempt Gemini platform fallback
+        gemini_key = os.getenv("GEMINI_API_KEY") or getattr(settings, "google_api_key", None)
+        if gemini_key:
+            logger.info("All Groq models failed. Initiating Gemini platform fallback.")
+            return await LLMService._complete_gemini(prompt, system_prompt, gemini_key)
+            
+        return "AlphaAI: Generation failed. All Groq models are currently busy or unconfigured."
 
     @staticmethod
-    def _provider_order(preferred_provider: Optional[str]) -> Sequence[str]:
-        default_order = ["groq", "anthropic", "gemini"]
-        if not preferred_provider:
-            return default_order
-
-        provider = preferred_provider.lower().strip()
-        if provider not in default_order:
-            return default_order
-
-        return [provider, *[item for item in default_order if item != provider]]
-
-    async def _complete_groq(self, prompt: str, *, response_format: str, max_tokens: int) -> str:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {self.groq_api_key}", "Content-Type": "application/json"}
+    async def _complete_gemini(prompt: str, system_prompt: str, api_key: str) -> str:
+        """
+        Fallback generator calling the Gemini API directly.
+        """
+        headers = {"Content-Type": "application/json"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        
+        full_prompt = f"{system_prompt}\n\nUser Question:\n{prompt}"
         payload = {
-            "model": "llama-3.1-70b-versatile",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": max_tokens,
+            "contents": [
+                {"parts": [{"text": full_prompt}]}
+            ]
         }
-        if response_format == "json":
-            payload["response_format"] = {"type": "json_object"}
-
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-
-    async def _complete_anthropic(self, prompt: str, *, response_format: str, max_tokens: int) -> str:
-        url = "https://api.anthropic.com/v1/messages"
-        headers = {
-            "x-api-key": self.anthropic_api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        payload: Dict[str, Any] = {
-            "model": "claude-3-5-sonnet-20240620",
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        if response_format == "json":
-            payload["system"] = "Respond only as valid JSON."
-
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            content = data.get("content", [])
-            if content and isinstance(content, list):
-                return content[0].get("text", "")
-            return ""
-
-    async def _complete_gemini(self, prompt: str, *, response_format: str, max_tokens: int) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.gemini_api_key}"
-        payload: Dict[str, Any] = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": max_tokens},
-        }
-        if response_format == "json":
-            payload["generationConfig"]["responseMimeType"] = "application/json"
-
-        async with httpx.AsyncClient(timeout=45.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            candidates = data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if parts:
-                    return parts[0].get("text", "")
-            return ""
-
-    def _fallback(self, prompt: str, *, response_format: str) -> str:
-        if response_format == "json":
-            return json.dumps({"fallback": True, "message": prompt[:200]}, ensure_ascii=False)
-        return prompt
-
-
-llm_service = LLMService()
+        
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["candidates"][0]["content"]["parts"][0]["text"]
+                    logger.info("Gemini Pro fallback completed successfully.")
+                    return content
+                else:
+                    logger.warning(f"Gemini API returned status {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.error(f"Failed calling Gemini API fallback: {e}")
+            
+        return "AlphaAI: Generation failed. All generative AI services are currently unavailable."
