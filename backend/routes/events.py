@@ -3,7 +3,7 @@ import logging
 import os
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from utils.supabase_client import get_supabase_client
 from services.llm_service import LLMService
 
@@ -149,3 +149,31 @@ async def get_fear_greed_index():
         "classification": classification,
         "explanation": explanation
     }
+
+
+@router.get("/price-events", summary="List recent price events")
+async def list_price_events(limit: int = 6):
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(503, "Supabase client is not configured.")
+
+    result = supabase.table("price_events").select("*").eq("dismissed", False).order("created_at", desc=True).limit(limit).execute()
+    if result.error:
+        logger.error("Failed to fetch price events: %s", result.error)
+        raise HTTPException(500, "Unable to load price events.")
+
+    return result.data or []
+
+
+@router.delete("/price-events/{event_id}", summary="Dismiss a price event")
+async def dismiss_price_event(event_id: str):
+    supabase = get_supabase_client()
+    if not supabase:
+        raise HTTPException(503, "Supabase client is not configured.")
+
+    result = supabase.table("price_events").update({"dismissed": True}).eq("id", event_id).execute()
+    if result.error:
+        logger.error("Failed to dismiss price event %s: %s", event_id, result.error)
+        raise HTTPException(500, "Unable to dismiss price event.")
+
+    return {"id": event_id}
