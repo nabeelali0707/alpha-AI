@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthProvider';
 import { useToast } from '../../../components/Toast';
 
@@ -31,17 +32,47 @@ const labelStyle = {
 };
 
 export default function SignupPage() {
-  const { signup } = useAuth();
+  const { signup, user, session, loading: authLoading } = useAuth();
   const { showToast } = useToast();
+  const router = useRouter();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showPass, setShowPass] = useState(false);
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (!authLoading && user && session) {
+      router.replace('/dashboard');
+    }
+  }, [user, session, authLoading, router]);
+
+  // Show loading screen while checking auth
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Checking authentication...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is logged in, don't show the form
+  if (user && session) {
+    return (
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Redirecting to dashboard...</div>
+        </div>
+      </div>
+    );
+  }
 
   const strength = getStrength(password);
 
@@ -51,7 +82,7 @@ export default function SignupPage() {
     if (!fullName.trim()) return setError('Please enter your full name.');
     if (password.length < 8) return setError('Password must be at least 8 characters.');
     if (password !== confirmPassword) return setError('Passwords do not match.');
-    setLoading(true);
+    setFormLoading(true);
     try {
       await signup(email, password, fullName.trim());
       setSuccess(true);
@@ -59,13 +90,13 @@ export default function SignupPage() {
     } catch (err: any) {
       setError(err.message || 'Signup failed. Please try again.');
     } finally {
-      setLoading(false);
+      setFormLoading(false);
     }
   }
 
   if (success) {
     return (
-      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="page-enter" style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="glass" style={{ maxWidth: 400, width: '100%', padding: 40, textAlign: 'center', borderRadius: 'var(--radius-xl)' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📬</div>
           <h2 style={{ fontFamily: 'var(--font-headline)', fontSize: 24, marginBottom: 12 }}>Check your inbox</h2>
@@ -79,15 +110,15 @@ export default function SignupPage() {
   }
 
   return (
-    <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div className="page-enter" style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div className="animate-fadeInDown" style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ color: 'var(--accent-green)', fontSize: 11, letterSpacing: '0.25em', textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>◈ NEW OPERATOR REGISTRATION</div>
           <h1 style={{ fontSize: 30, fontWeight: 700, fontFamily: 'var(--font-headline)', letterSpacing: '-0.02em', marginBottom: 8 }}>Create Account</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Join AlphaAI and start investing smarter</p>
         </div>
 
-        <div className="glass" style={{ padding: 32, borderRadius: 'var(--radius-xl)' }}>
+        <div className="glass animate-scaleIn delay-200 hover-glow" style={{ padding: 32, borderRadius: 'var(--radius-xl)' }}>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div><label style={labelStyle}>Full Name</label><input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="John Smith" autoComplete="name" required style={inputStyle} /></div>
             <div><label style={labelStyle}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required style={inputStyle} /></div>
@@ -114,8 +145,8 @@ export default function SignupPage() {
 
             {error && <div style={{ padding: '10px 14px', background: 'rgba(255,49,49,0.1)', border: '1px solid rgba(255,49,49,0.3)', borderRadius: 8, fontSize: 13, color: '#ff6b6b' }}>{error}</div>}
 
-            <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, background: loading ? 'rgba(0,255,65,0.4)' : 'var(--accent-green)', color: '#003907', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              {loading ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(0,57,7,0.3)', borderTopColor: '#003907', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />Creating…</> : 'Create Account'}
+            <button type="submit" disabled={formLoading} style={{ width: '100%', padding: 13, background: formLoading ? 'rgba(0,255,65,0.4)' : 'var(--accent-green)', color: '#003907', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: formLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {formLoading ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(0,57,7,0.3)', borderTopColor: '#003907', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />Creating…</> : 'Create Account'}
             </button>
           </form>
           <div style={{ textAlign: 'center', marginTop: 20, fontSize: 14, color: 'var(--text-secondary)' }}>

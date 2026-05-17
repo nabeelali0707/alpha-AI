@@ -34,30 +34,50 @@ export default function MarketDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
 
+  // ── Staggered polling to avoid flooding Yahoo with simultaneous requests ──
   useEffect(() => {
-    const fetchData = async () => {
+    let mounted = true;
+    const fetchCrypto = async () => {
       try {
-        setLoading(true);
-        
-        const [cryptoRes, forexRes, commodityRes] = await Promise.all([
-          axios.get(`${API_BASE}/live/crypto/all?limit=10`),
-          axios.get(`${API_BASE}/live/forex/all`),
-          axios.get(`${API_BASE}/live/commodity/all`),
-        ]);
-
-        setCrypto(cryptoRes.data || []);
-        setForex(forexRes.data || []);
-        setCommodities(commodityRes.data || []);
-      } catch (error) {
-        console.error('Error fetching market data:', error);
-      } finally {
-        setLoading(false);
-      }
+        const res = await axios.get(`${API_BASE}/live/crypto/all?limit=10`);
+        if (mounted) { setCrypto(res.data || []); setLoading(false); }
+      } catch (e) { console.error('Crypto fetch error:', e); }
     };
+    fetchCrypto(); // immediate
+    const id = setInterval(fetchCrypto, 60000); // every 60s
+    return () => { mounted = false; clearInterval(id); };
+  }, []);
 
-    fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
+  useEffect(() => {
+    let mounted = true;
+    const fetchForex = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/live/forex/all`);
+        if (mounted) setForex(res.data || []);
+      } catch (e) { console.error('Forex fetch error:', e); }
+    };
+    const timeout = setTimeout(() => {
+      fetchForex();
+      const id = setInterval(fetchForex, 120000); // every 120s
+      return () => clearInterval(id);
+    }, 15000); // start after 15s
+    return () => { mounted = false; clearTimeout(timeout); };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchCommodity = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/live/commodity/all`);
+        if (mounted) setCommodities(res.data || []);
+      } catch (e) { console.error('Commodity fetch error:', e); }
+    };
+    const timeout = setTimeout(() => {
+      fetchCommodity();
+      const id = setInterval(fetchCommodity, 120000); // every 120s
+      return () => clearInterval(id);
+    }, 30000); // start after 30s
+    return () => { mounted = false; clearTimeout(timeout); };
   }, []);
 
   const renderCryptoTable = () => (

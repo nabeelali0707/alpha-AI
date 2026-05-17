@@ -14,6 +14,16 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
+# ── Request Throttling ─────────────────────────────────────────────────────
+# Limit concurrent yfinance requests to prevent connection pool exhaustion
+_yfinance_semaphore = asyncio.Semaphore(3)  # Max 3 concurrent requests
+
+async def _throttled_yfinance_call(func, *args, **kwargs):
+    """Wrap yfinance calls with a semaphore to throttle requests"""
+    async with _yfinance_semaphore:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, func, *args)
+
 # Cache configuration
 CRYPTO_CACHE = TTLCache(maxsize=1000, ttl=30)  # 30s for crypto
 FOREX_CACHE = TTLCache(maxsize=500, ttl=60)    # 60s for forex
@@ -171,47 +181,9 @@ class LiveMarketService:
     
     @staticmethod
     async def get_commodity_price(symbol: str) -> Optional[Dict[str, Any]]:
-        """Get commodity prices (gold, oil, etc.) from yfinance"""
-        try:
-            cache_key = symbol
-            if cache_key in METAL_CACHE:
-                return METAL_CACHE[cache_key]
-            
-            commodity_info = LiveMarketService.COMMODITIES.get(symbol)
-            if not commodity_info:
-                return None
-            
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1d")
-            
-            if hist.empty:
-                return None
-            
-            latest = hist.iloc[-1]
-            prev_close = ticker.info.get("previousClose", latest["Close"])
-            change = latest["Close"] - prev_close
-            change_pct = (change / prev_close * 100) if prev_close else 0
-            
-            result = {
-                "symbol": symbol,
-                "name": commodity_info["name"],
-                "unit": commodity_info["unit"],
-                "price": float(latest["Close"]),
-                "high": float(latest["High"]),
-                "low": float(latest["Low"]),
-                "volume": int(latest["Volume"]),
-                "change": float(change),
-                "change_pct": float(change_pct),
-                "timestamp": datetime.now().isoformat(),
-                "source": "yfinance",
-            }
-            
-            METAL_CACHE[cache_key] = result
-            return result
-        
-        except Exception as e:
-            logger.error(f"Error fetching commodity price for {symbol}: {e}")
-            return None
+        """Get commodity prices - disabled due to yfinance rate limiting"""
+        # Skip yfinance entirely to prevent rate limit errors
+        return None
     
     @staticmethod
     async def get_all_crypto(vs_currency: str = "usd", limit: int = 20) -> List[Dict[str, Any]]:

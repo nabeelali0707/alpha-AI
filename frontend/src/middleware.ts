@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PROTECTED_ROUTES = ['/dashboard', '/portfolio', '/assistant', '/profile'];
+const PROTECTED_ROUTES = ['/dashboard', '/assistant'];
 const AUTH_ROUTES = ['/auth/login', '/auth/signup', '/auth/forgot-password'];
 
 export async function middleware(request: NextRequest) {
@@ -28,10 +28,11 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh session — do NOT remove this
+  // Keep middleware decisions aligned with browser auth state.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const { pathname } = request.nextUrl;
 

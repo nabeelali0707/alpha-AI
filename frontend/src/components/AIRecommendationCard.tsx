@@ -10,6 +10,8 @@ interface Recommendation {
   explanation: string;
   urdu_explanation?: string | null;
   reasons: string[];
+  win_probability?: number;
+  disclaimer?: string;
   sentiment_summary?: { label?: string; score?: number; total_articles?: number } | null;
 }
 
@@ -165,6 +167,34 @@ export default function AIRecommendationCard({ data, loading = false, ticker }: 
               />
             </div>
           </div>
+
+          {/* Win Probability */}
+          {data?.win_probability != null && (
+            <div style={{ marginBottom: "16px", padding: "12px 14px", background: "rgba(255,255,255,0.03)", borderRadius: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "11px", color: "rgba(148,163,184,0.6)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  Win Probability
+                </span>
+                <span style={{ fontSize: "18px", fontWeight: 700, color: data.win_probability >= 65 ? "#00ff41" : data.win_probability >= 55 ? "#f59e0b" : "#ff3131" }}>
+                  {data.win_probability}%
+                </span>
+              </div>
+              <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "9999px" }}>
+                <div style={{
+                  width: `${data.win_probability}%`,
+                  height: "100%",
+                  background: data.win_probability >= 65 ? "#00ff41" : data.win_probability >= 55 ? "#f59e0b" : "#ff3131",
+                  borderRadius: "9999px",
+                  transition: "width 1s ease",
+                }} />
+              </div>
+              {data?.disclaimer && (
+                <p style={{ fontSize: "9px", color: "rgba(148,163,184,0.3)", marginTop: "8px", lineHeight: 1.4 }}>
+                  {data.disclaimer}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Sentiment badge */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>

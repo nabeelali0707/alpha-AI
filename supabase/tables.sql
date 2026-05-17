@@ -31,13 +31,36 @@ create table if not exists public.portfolios (
 -- Alerts table
 create table if not exists public.alerts (
   id uuid primary key default gen_random_uuid(),
-  owner uuid references public.profiles(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
   symbol text not null,
-  threshold numeric,
-  comparison text,
-  enabled boolean default true,
+  alert_type text not null check (alert_type in ('price_above', 'price_below')),
+  threshold numeric not null,
+  note text,
+  is_triggered boolean default false,
   created_at timestamptz default now()
 );
+
+alter table if exists public.alerts
+  add column if not exists user_id uuid references auth.users(id) on delete cascade,
+  add column if not exists alert_type text,
+  add column if not exists note text,
+  add column if not exists threshold numeric,
+  add column if not exists is_triggered boolean default false,
+  add column if not exists created_at timestamptz default now();
+
+alter table if exists public.alerts
+  alter column symbol set not null;
+
+alter table if exists public.alerts
+  drop constraint if exists alerts_alert_type_check;
+
+alter table if exists public.alerts
+  add constraint alerts_alert_type_check check (alert_type in ('price_above', 'price_below'));
+
+alter table public.alerts enable row level security;
+drop policy if exists "users_own_alerts" on public.alerts;
+create policy "users_own_alerts" on public.alerts
+  using (auth.uid() = user_id);
 
 create table if not exists public.portfolio_holdings (
   id uuid default gen_random_uuid() primary key,

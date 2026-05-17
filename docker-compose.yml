@@ -1,5 +1,16 @@
 version: '3.8'
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   db:
     image: postgres:15
     environment:
@@ -16,8 +27,12 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     depends_on:
-      - db
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_started
     environment:
+      - REDIS_URL=redis://redis:6379
       - POSTGRES_HOST=db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=example
@@ -25,8 +40,15 @@ services:
       - SUPABASE_URL=
       - SUPABASE_SERVICE_ROLE=
       - NEXT_PUBLIC_ALPHAAI_API_BASE_URL=http://backend:8001/api/v1
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
     ports:
       - "8001:8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     volumes:
       - ./backend:/app
       - ./supabase/tables.sql:/app/supabase/tables.sql
@@ -41,6 +63,7 @@ services:
       - NEXT_PUBLIC_ALPHAAI_API_BASE_URL=http://backend:8001/api/v1
     ports:
       - "3000:3000"
+    restart: unless-stopped
     volumes:
       - ./frontend:/app
 

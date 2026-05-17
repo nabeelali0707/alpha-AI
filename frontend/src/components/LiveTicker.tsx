@@ -14,9 +14,36 @@ interface TickerData {
   timestamp: string;
 }
 
-const WS_URL =
-  process.env.NEXT_PUBLIC_ALPHAAI_WS_URL ||
-  "ws://localhost:8001/api/v1/ws/prices";
+function resolveWsUrl(): string {
+  const explicitWsUrl = process.env.NEXT_PUBLIC_ALPHAAI_WS_URL;
+  if (explicitWsUrl) {
+    return explicitWsUrl;
+  }
+
+  const apiBase = process.env.NEXT_PUBLIC_ALPHAAI_API_BASE_URL;
+  if (apiBase) {
+    try {
+      const normalized = /^https?:\/\//i.test(apiBase)
+        ? apiBase
+        : apiBase.startsWith(":")
+          ? `http://localhost${apiBase}`
+          : `http://${apiBase}`;
+      const url = new URL(normalized);
+      const protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${url.host}/api/v1/ws/prices`;
+    } catch {
+      // Fall back below
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.hostname;
+    return `${protocol}//${host}:8001/api/v1/ws/prices`;
+  }
+
+  return "ws://localhost:8001/api/v1/ws/prices";
+}
 
 const RECONNECT_DELAY_MS = 3000;
 
@@ -35,11 +62,12 @@ export default function LiveTicker() {
 
   useEffect(() => {
     let unmounted = false;
+    const wsUrl = resolveWsUrl();
 
     function connect() {
       if (unmounted) return;
 
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

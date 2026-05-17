@@ -29,7 +29,7 @@ export default function TickerTape() {
     }
 
     load();
-    const id = setInterval(load, 60000);
+    const id = setInterval(load, 120000); // every 2min to reduce Yahoo load
     return () => {
       mounted = false;
       clearInterval(id);

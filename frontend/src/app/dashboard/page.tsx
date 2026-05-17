@@ -20,6 +20,10 @@ import TickerTape from '@/components/TickerTape';
 import LiveTicker from '@/components/LiveTicker';
 import CandlestickChart from '@/components/CandlestickChart';
 import SectorHeatmap from '@/components/SectorHeatmap';
+import MarketNarrator from '@/components/MarketNarrator';
+import EventAlert from '@/components/EventAlert';
+import DailyBriefing from '@/components/DailyBriefing';
+import TermExplainer from '@/components/TermExplainer';
 
 const watchlist = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'AMZN'];
 
@@ -109,18 +113,15 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="mx-auto max-w-[1400px] px-6 py-10 sm:px-8">
+    <main className="mx-auto max-w-[1400px] px-6 py-10 sm:px-8 page-enter">
       <div style={{ marginBottom: 4 }}>
         <LiveTicker />
       </div>
       <div style={{ marginBottom: 16 }}>
         <TickerTape />
       </div>
-      <motion.section
-        className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"
-        initial="hidden"
-        animate="visible"
-        variants={sectionVariants}
+      <section
+        className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between animate-fadeInUp"
       >
         <div>
           <p className="mb-2 text-sm uppercase tracking-[0.28em] text-[#84b2ff]">AlphaAI Premium</p>
@@ -132,36 +133,32 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <button className="btn btn-outline rounded-full px-5 py-3 text-sm font-semibold transition hover:bg-white/5">
-            Export Report
-          </button>
-          <button className="btn btn-primary rounded-full px-5 py-3 text-sm font-semibold transition hover:shadow-glow">
-            Launch Live View
-          </button>
+        <div className="flex flex-wrap gap-3 items-center">
+          <MarketNarrator />
+          <DailyBriefing />
         </div>
-      </motion.section>
+      </section>
 
-      <motion.div
-        className="mb-8 flex flex-wrap gap-3"
-        initial="hidden"
-        animate="visible"
-        variants={sectionVariants}
+      {/* AI Event Alerts — stocks that moved >3% */}
+      <EventAlert />
+
+      <div
+        className="mb-8 flex flex-wrap gap-3 animate-fadeInUp delay-100"
       >
         {watchlist.map((symbol) => (
           <button
             key={symbol}
             onClick={() => setTicker(symbol)}
-            className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-200 ${
+            className={`rounded-full border px-4 py-2 text-sm font-medium transition duration-200 hover-scale hover-glow ${
               ticker === symbol
                 ? 'border-[#00ff41] bg-[#00ff41]/10 text-[#00ff41]'
-                : 'border-[#4c5d7c] bg-[#15203d] text-[#c7d3ffb3] hover:border-[#0a84ff] hover:text-white'
+                : 'border-[#4c5d7c] bg-[#15203d] text-[#c7d3ffb3]'
             }`}
           >
             {symbol}
           </button>
         ))}
-      </motion.div>
+      </div>
 
       {error && (
         <motion.div
@@ -175,13 +172,8 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      <motion.section
-        className="grid gap-6 lg:grid-cols-3"
-        initial="hidden"
-        animate="visible"
-        variants={sectionVariants}
-      >
-        <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6 shadow-glow">
+      <motion.section className="grid gap-6 lg:grid-cols-3">
+        <div className="glass-card hover-lift animate-fadeInUp delay-200 rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6 shadow-glow">
           <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">Current Price</p>
           <p className="mt-4 text-5xl font-semibold text-white">${price?.price ?? '--'}</p>
           <p className="mt-3 text-sm text-[#94a3b8]">{new Date(price?.timestamp || '').toLocaleTimeString()}</p>
@@ -198,7 +190,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="glass-card rounded-[1.5rem] border border-[#00ff4130] bg-[#11182780] p-6">
+        <div className="glass-card hover-lift animate-fadeInUp delay-300 rounded-[1.5rem] border border-[#00ff4130] bg-[#11182780] p-6">
           <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">AI Recommendation</p>
           <p className="mt-4 text-4xl font-semibold" style={{ color: recommendationColor }}>
             {recommendationLabel}
@@ -210,12 +202,14 @@ export default function Dashboard() {
           <p className="mt-5 text-sm leading-6 text-[#c7d3ffcc]">{recommendationExplanation}</p>
         </div>
 
-        <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+        <div className="glass-card hover-lift animate-fadeInUp delay-400 rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
           <p className="text-xs uppercase tracking-[0.28em] text-[#94a3b8]">Technical Indicators</p>
           <div className="mt-6 grid gap-4">
             <div className="rounded-3xl bg-white/5 p-4">
               <div className="flex items-center justify-between text-sm text-[#c7d3ffcc]">
-                <span>RSI</span>
+                <TermExplainer term="RSI" ticker={ticker} indicatorData={`RSI value: ${technicals?.rsi.value.toFixed(2)}, Signal: ${technicals?.rsi.signal}`}>
+                  <span>RSI</span>
+                </TermExplainer>
                 <span className={technicals?.rsi.signal === 'OVERBOUGHT' ? 'text-[#ff3131]' : technicals?.rsi.signal === 'OVERSOLD' ? 'text-[#00ff41]' : 'text-[#0a84ff]'}>
                   {technicals?.rsi.value.toFixed(2)}
                 </span>
@@ -223,7 +217,9 @@ export default function Dashboard() {
             </div>
             <div className="rounded-3xl bg-white/5 p-4">
               <div className="flex items-center justify-between text-sm text-[#c7d3ffcc]">
-                <span>MACD</span>
+                <TermExplainer term="MACD" ticker={ticker} indicatorData={`MACD signal: ${technicals?.macd.signal}`}>
+                  <span>MACD</span>
+                </TermExplainer>
                 <span className={technicals?.macd.signal === 'BULLISH' ? 'text-[#00ff41]' : 'text-[#ff3131]'}>
                   {technicals?.macd.signal}
                 </span>
@@ -231,7 +227,9 @@ export default function Dashboard() {
             </div>
             <div className="rounded-3xl bg-white/5 p-4">
               <div className="flex items-center justify-between text-sm text-[#c7d3ffcc]">
-                <span>Trend</span>
+                <TermExplainer term={technicals?.moving_averages.trend === 'GOLDEN_CROSS' ? 'Golden Cross' : technicals?.moving_averages.trend === 'DEATH_CROSS' ? 'Death Cross' : 'Moving Average Trend'} ticker={ticker} indicatorData={`Trend: ${technicals?.moving_averages.trend}`}>
+                  <span>Trend</span>
+                </TermExplainer>
                 <span className={technicals?.moving_averages.trend?.includes('BULLISH') || technicals?.moving_averages.trend === 'GOLDEN_CROSS' ? 'text-[#00ff41]' : 'text-[#ff3131]'}>
                   {technicals?.moving_averages.trend}
                 </span>
@@ -252,9 +250,9 @@ export default function Dashboard() {
           <p className="text-sm text-[#c7d3ffcc]">Synchronizing live market feeds...</p>
         </motion.div>
       ) : chartData.length > 0 ? (
-        <motion.div className="grid gap-6" initial="hidden" animate="visible" variants={sectionVariants}>
+        <div className="grid gap-6 animate-fadeInUp delay-500">
           <section className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-            <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+            <div className="glass-card hover-lift rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
               <div className="mb-4 flex items-center justify-between">
                 <p className="font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Price Chart</p>
                 <span className="rounded-full bg-[#0a84ff]/10 px-3 py-1 text-xs text-[#c7d3ffcc]">30 days</span>
@@ -273,7 +271,7 @@ export default function Dashboard() {
             </div>
 
             <div className="grid gap-6">
-              <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+              <div className="glass-card hover-lift rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
                 <div className="mb-4 flex items-center justify-between">
                   <p className="font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Volume</p>
                   <span className="rounded-full bg-[#00ff41]/10 px-3 py-1 text-xs text-[#c7d3ffcc]">High liquidity</span>
@@ -295,7 +293,7 @@ export default function Dashboard() {
           <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
             <SectorHeatmap />
             <div className="grid gap-6">
-              <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+              <div className="glass-card hover-lift rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
                 <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Price Range Analysis</p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-3xl bg-white/5 p-4">
@@ -317,7 +315,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+              <div className="glass-card hover-lift rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
                 <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Recommendation Reasons</p>
                 <div className="space-y-3">
                     {recommendationReasons.map((reason, idx) => (
@@ -329,7 +327,7 @@ export default function Dashboard() {
               </div>
 
               {data?.metadata && (
-                <div className="glass-card rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
+                <div className="glass-card hover-lift rounded-[1.5rem] border border-white/10 bg-[#11182780] p-6">
                   <p className="mb-4 font-semibold uppercase tracking-[0.28em] text-[#94a3b8]">Company Info</p>
                   <div className="grid gap-4 text-sm text-[#d1d5db]">
                     <div className="rounded-3xl bg-white/5 p-4">
@@ -357,7 +355,7 @@ export default function Dashboard() {
               )}
             </div>
           </section>
-        </motion.div>
+        </div>
       ) : null}
     </main>
   );

@@ -161,6 +161,8 @@ class Recommendation(BaseModel):
     explanation: str = Field(..., description="Human-readable AI explanation")
     urdu_explanation: Optional[str] = Field(None, description="Urdu AI explanation")
     reasons: List[str] = Field(default_factory=list)
+    win_probability: Optional[int] = Field(None, description="Estimated win probability percentage")
+    disclaimer: Optional[str] = Field(None, description="Recommendation disclaimer")
     technical_indicators: Optional[TechnicalIndicators] = None
     sentiment_summary: Optional[SentimentSummary] = None
     price_data: Optional[StockPrice] = None

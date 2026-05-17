@@ -55,61 +55,21 @@ FALLBACK_PRICES: Dict[str, float] = {
 _baselines: Dict[str, float] = {}
 _previous_prices: Dict[str, float] = {}
 
-BROADCAST_INTERVAL_SECONDS = 4  # How often ticks are pushed
+BROADCAST_INTERVAL_SECONDS = 10  # How often ticks are pushed (increased from 4 to reduce load)
 
 
 # ── Baseline Seeding ────────────────────────────────────────────────────────
 
 async def _seed_baselines() -> None:
     """
-    Fetch the most recent closing price for each ticker via yfinance.
-    Runs in a thread-pool executor so the event loop is not blocked.
+    Initialize baselines with fallback prices immediately.
+    Skip yfinance on startup to avoid rate limiting.
+    Prices will converge to real data once market APIs stabilize.
     """
-    loop = asyncio.get_running_loop()
-
-    def _fetch() -> Dict[str, float]:
-        prices: Dict[str, float] = {}
-        try:
-            import yfinance as yf
-
-            for symbol in TICKERS:
-                try:
-                    ticker = yf.Ticker(symbol)
-                    # Try fast_info first (lighter)
-                    fast = getattr(ticker, "fast_info", None)
-                    price: Optional[float] = None
-                    if fast:
-                        price = fast.get("last_price") or fast.get("previousClose")
-
-                    # Fallback to history
-                    if price is None:
-                        hist = ticker.history(period="5d", interval="1d")
-                        if hist is not None and not hist.empty:
-                            price = float(hist["Close"].iloc[-1])
-
-                    if price and price > 0:
-                        prices[symbol] = round(price, 2)
-                        logger.info("Seeded %s → $%.2f", symbol, price)
-                    else:
-                        prices[symbol] = FALLBACK_PRICES.get(symbol, 100.0)
-                        logger.warning(
-                            "No yfinance data for %s — using fallback $%.2f",
-                            symbol,
-                            prices[symbol],
-                        )
-                except Exception as exc:
-                    prices[symbol] = FALLBACK_PRICES.get(symbol, 100.0)
-                    logger.warning("yfinance error for %s: %s — using fallback", symbol, exc)
-        except ImportError:
-            logger.error("yfinance not installed — using all fallback prices")
-            prices = dict(FALLBACK_PRICES)
-
-        return prices
-
-    fetched = await loop.run_in_executor(None, _fetch)
-    _baselines.update(fetched)
-    _previous_prices.update(fetched)
-    logger.info("Baseline seeding complete for %d tickers", len(_baselines))
+    prices = dict(FALLBACK_PRICES)
+    _baselines.update(prices)
+    _previous_prices.update(prices)
+    logger.info("Baseline initialized with fallback prices for %d tickers", len(prices))
 
 
 # ── Tick Simulation ─────────────────────────────────────────────────────────

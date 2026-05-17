@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -6,16 +7,20 @@ from functools import lru_cache
 from typing import Dict, List, Any, Optional
 
 import pandas as pd
-from cachetools import TTLCache
 from fastapi import HTTPException
+from utils.cache import cache_get, cache_set
 
 logger = logging.getLogger("alphaai.stock_service")
 
-PRICE_CACHE = TTLCache(maxsize=500, ttl=30)
-HISTORY_CACHE = TTLCache(maxsize=200, ttl=300)
-INFO_CACHE = TTLCache(maxsize=500, ttl=3600)
-MARKET_CACHE = TTLCache(maxsize=1, ttl=60)
-AUTOCOMPLETE_CACHE = TTLCache(maxsize=200, ttl=300)
+# ---------------------------------------------------------------------------
+# Global rate-limit awareness for Yahoo Finance
+# ---------------------------------------------------------------------------
+YAHOO_RATE_LIMITED = False
+YAHOO_RATE_LIMIT_UNTIL: float = 0
+
+# In-memory price cache keyed by symbol – survives across requests so we can
+# return stale data when Yahoo is down or rate-limited.
+PSX_PRICE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 MARKET_TICKERS = {
     "PSX": {
@@ -97,17 +102,210 @@ MARKET_TICKERS = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Helpers — Supabase local PSX data
+# ---------------------------------------------------------------------------
+
+def _get_from_supabase_psx(symbol: str) -> Optional[Dict[str, Any]]:
+    """Try to fetch a PSX stock row from the Supabase psx_stocks table."""
+    try:
+        from utils.supabase_client import get_supabase_client
+
+        sb = get_supabase_client()
+        if not sb:
+            return None
+
+        clean_symbol = symbol.replace(".KA", "")
+        result = (
+            sb.table("psx_stocks")
+            .select("*")
+            .or_(f"symbol.eq.{symbol},symbol.eq.{clean_symbol}")
+            .limit(1)
+            .execute()
+        )
+        rows = getattr(result, "data", None) or []
+        if not rows:
+            return None
+
+        row = rows[0]
+        price = row.get("last_price")
+        if price is None:
+            return None
+
+        return {
+            "symbol": symbol.upper(),
+            "name": row.get("name") or MARKET_TICKERS["PSX"].get(symbol, symbol),
+            "price": round(float(price), 2),
+            "change": 0.0,
+            "change_percent": 0.0,
+            "volume": 0,
+            "timestamp": row.get("last_date") or datetime.now().isoformat(),
+        }
+    except Exception as exc:
+        logger.debug("Supabase PSX lookup failed for %s: %s", symbol, exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Safe PSX fetcher — priority chain: Supabase → yfinance (fast_info) → cache
+# ---------------------------------------------------------------------------
+
+def get_psx_stock_safe(symbol: str) -> Dict[str, Any]:
+    """
+    Fetch a PSX stock price using a resilient priority chain:
+      1. Supabase psx_stocks table (instant, local)
+      2. yfinance fast_info with exponential backoff (lightweight)
+      3. In-memory cache / placeholder
+    """
+    global YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
+
+    # ── Priority 1: Supabase local data ──────────────────────────────────
+    try:
+        local = _get_from_supabase_psx(symbol)
+        if local and local.get("price"):
+            local["source"] = "local"
+            local["is_cached"] = False
+            # Warm the in-memory cache so Priority 3 has data later
+            PSX_PRICE_CACHE[symbol] = local
+            return local
+    except Exception:
+        pass
+
+    # ── Check global rate-limit flag before touching Yahoo ───────────────
+    if YAHOO_RATE_LIMITED and time.time() < YAHOO_RATE_LIMIT_UNTIL:
+        cached = PSX_PRICE_CACHE.get(symbol)
+        if cached:
+            return {**cached, "source": "cache", "is_cached": True}
+        return _psx_placeholder(symbol)
+
+    if YAHOO_RATE_LIMITED and time.time() >= YAHOO_RATE_LIMIT_UNTIL:
+        YAHOO_RATE_LIMITED = False
+
+    # ── Priority 2: yfinance with retry + backoff ────────────────────────
+    try:
+        import yfinance as yf
+    except Exception:
+        yf = None
+
+    if yf is not None:
+        for attempt in range(3):
+            try:
+                if attempt > 0:
+                    time.sleep(attempt * 2)  # 0s, 2s, 4s backoff
+
+                ticker = yf.Ticker(symbol)
+                fi = ticker.fast_info  # lightweight — one request vs 10+
+
+                last_price = getattr(fi, "last_price", None)
+                if last_price is None:
+                    # Try attribute-style access for older yfinance
+                    try:
+                        last_price = fi["last_price"]
+                    except (KeyError, TypeError):
+                        pass
+
+                if last_price:
+                    prev = getattr(fi, "previous_close", None) or last_price
+                    change = float(last_price) - float(prev)
+                    change_pct = (change / float(prev) * 100) if prev else 0.0
+                    payload = {
+                        "symbol": symbol.upper(),
+                        "name": MARKET_TICKERS["PSX"].get(symbol, symbol),
+                        "price": round(float(last_price), 2),
+                        "change": round(change, 2),
+                        "change_percent": round(change_pct, 2),
+                        "volume": 0,
+                        "timestamp": datetime.now().isoformat(),
+                        "source": "yfinance",
+                        "is_cached": False,
+                    }
+                    PSX_PRICE_CACHE[symbol] = payload
+                    return payload
+
+            except Exception as e:
+                if "429" in str(e):
+                    YAHOO_RATE_LIMITED = True
+                    YAHOO_RATE_LIMIT_UNTIL = time.time() + 300  # 5-min cooldown
+                    logger.warning("Yahoo 429 for %s — backing off 5 min", symbol)
+                    time.sleep(10)
+                continue
+
+    # ── Priority 3: cached value or placeholder ──────────────────────────
+    cached = PSX_PRICE_CACHE.get(symbol)
+    if cached:
+        return {**cached, "source": "cache", "is_cached": True}
+
+    return _psx_placeholder(symbol)
+
+
+def _psx_placeholder(symbol: str) -> Dict[str, Any]:
+    return {
+        "symbol": symbol.upper(),
+        "name": MARKET_TICKERS["PSX"].get(symbol, symbol),
+        "price": None,
+        "change": 0.0,
+        "change_percent": 0.0,
+        "volume": 0,
+        "timestamp": datetime.now().isoformat(),
+        "error": "Data temporarily unavailable",
+        "is_cached": True,
+        "source": "none",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit–aware wrapper (used by market overview for ANY ticker)
+# ---------------------------------------------------------------------------
+
+def fetch_with_rate_limit_awareness(symbol: str) -> Optional[Dict[str, Any]]:
+    """Return cached data immediately when Yahoo is rate-limited."""
+    global YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
+
+    if YAHOO_RATE_LIMITED:
+        if time.time() < YAHOO_RATE_LIMIT_UNTIL:
+            return PSX_PRICE_CACHE.get(symbol)
+        else:
+            YAHOO_RATE_LIMITED = False
+
+    # For PSX tickers, delegate to the safe fetcher
+    if symbol.endswith(".KA"):
+        try:
+            return get_psx_stock_safe(symbol)
+        except Exception as e:
+            if "429" in str(e):
+                YAHOO_RATE_LIMITED = True
+                YAHOO_RATE_LIMIT_UNTIL = time.time() + 300
+            raise
+
+    return None  # non-PSX tickers fall through to normal path
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# StockService
+# ═══════════════════════════════════════════════════════════════════════════
+
 class StockService:
     @staticmethod
     def get_stock_price(ticker: str) -> Dict[str, Any]:
         """
         Fetches the current market price and 24h change for a given ticker.
         """
+        global YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
         try:
             cache_key = ticker.upper()
-            cached = PRICE_CACHE.get(cache_key)
-            if cached:
+            cached = cache_get(f"stock:price:{cache_key}")
+            if cached is not None:
                 return cached
+
+            # PSX tickers get the resilient path
+            if ticker.endswith(".KA"):
+                result = get_psx_stock_safe(ticker)
+                cache_set(f"stock:price:{cache_key}", result, ttl=60)
+                return result
+
+            # Check global rate-limit before hitting Yahoo
+            if YAHOO_RATE_LIMITED and time.time() < YAHOO_RATE_LIMIT_UNTIL:
+                raise ValueError("Yahoo rate-limited — using cache")
 
             try:
                 import yfinance as yf
@@ -123,44 +321,35 @@ class StockService:
             price = None
             prev_close = None
 
-            # 1) fast_info (yfinance newer API)
-            fast_info = getattr(stock, "fast_info", None)
-            if fast_info:
-                try:
-                    info = stock.fast_info
-                    price = info.get("last_price") or info.get("last")
-                    prev_close = info.get("previous_close") or info.get("previousClose")
-                except Exception:
-                    price = None
+            # 1) fast_info (lightweight — one request)
+            try:
+                fi = stock.fast_info
+                price = getattr(fi, "last_price", None)
+                prev_close = getattr(fi, "previous_close", None)
+            except Exception as e:
+                if "429" in str(e):
+                    YAHOO_RATE_LIMITED = True
+                    YAHOO_RATE_LIMIT_UNTIL = time.time() + 300
+                price = None
 
-            # 2) stock.info
+            # 2) Single history fallback (skip stock.info — too heavy)
             if price is None:
                 try:
-                    info2 = stock.info
-                    price = info2.get("regularMarketPrice") or info2.get("currentPrice") or info2.get("last_price")
-                    prev_close = info2.get("previousClose") or info2.get("previous_close")
-                except Exception:
-                    price = None
-
-            # 3) history fallbacks: try 1d, then 5d, then 1mo
-            if price is None:
-                for p in ("1d", "5d", "7d", "1mo"):
-                    hist = stock.history(period=p)
+                    hist = stock.history(period="5d")
                     if hist is not None and not hist.empty:
                         price = hist['Close'].iloc[-1]
-                        break
+                        if len(hist) >= 2:
+                            prev_close = hist['Close'].iloc[-2]
+                except Exception as e:
+                    if "429" in str(e):
+                        YAHOO_RATE_LIMITED = True
+                        YAHOO_RATE_LIMIT_UNTIL = time.time() + 300
 
             if price is None:
                 raise ValueError(f"No price data found for {ticker}")
 
             if prev_close is None:
-                # try to derive previous close from history if missing
-                try:
-                    hist2 = stock.history(period="5d")
-                    if hist2 is not None and len(hist2) >= 2:
-                        prev_close = hist2['Close'].iloc[-2]
-                except Exception:
-                    prev_close = price
+                prev_close = price
 
             change = float(price) - float(prev_close)
             change_percent = (change / float(prev_close)) * 100 if prev_close else 0
@@ -171,16 +360,19 @@ class StockService:
                 "change_percent": round(float(change_percent), 2),
                 "timestamp": datetime.now().isoformat()
             }
-            PRICE_CACHE[cache_key] = payload
+            cache_set(f"stock:price:{cache_key}", payload, ttl=30)
             return payload
         except Exception:
-            return {
+            fallback = {
                 "symbol": ticker.upper(),
                 "price": 0.0,
                 "change": 0.0,
                 "change_percent": 0.0,
                 "timestamp": datetime.now().isoformat()
             }
+            # Cache fallback for longer to avoid hammering yfinance on repeated failures.
+            cache_set(f"stock:price:{ticker.upper()}", fallback, ttl=180)
+            return fallback
 
     @staticmethod
     def get_stock_history(ticker: str, period: str = "1mo", interval: str = "1d") -> List[Dict[str, Any]]:
@@ -188,11 +380,16 @@ class StockService:
         Fetches historical price data. 
         Periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
         """
+        global YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
         try:
             cache_key = f"{ticker.upper()}|{period}|{interval}"
-            cached = HISTORY_CACHE.get(cache_key)
+            cached = cache_get(f"stock:history:{cache_key}")
             if cached is not None:
                 return cached
+
+            # Skip when Yahoo is rate-limited
+            if YAHOO_RATE_LIMITED and time.time() < YAHOO_RATE_LIMIT_UNTIL:
+                return []
 
             try:
                 import yfinance as yf
@@ -219,7 +416,7 @@ class StockService:
                     "close": round(float(row['Close']), 2),
                     "volume": int(row['Volume'])
                 })
-            HISTORY_CACHE[cache_key] = data
+            cache_set(f"stock:history:{cache_key}", data, ttl=300)
             return data
         except Exception:
             return []
@@ -229,46 +426,58 @@ class StockService:
         """
         Fetches comprehensive company metadata and fundamentals.
         """
+        global YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
+        _empty_info = {
+            "symbol": ticker.upper(),
+            "name": None,
+            "sector": None,
+            "industry": None,
+            "market_cap": None,
+            "pe_ratio": None,
+            "dividend_yield": None,
+            "fifty_two_week_high": None,
+            "fifty_two_week_low": None,
+            "description": None,
+            "website": None
+        }
         try:
             cache_key = ticker.upper()
-            cached = INFO_CACHE.get(cache_key)
+            cached = cache_get(f"stock:info:{cache_key}")
             if cached is not None:
                 return cached
+
+            # For PSX tickers, return basic info from local map to avoid
+            # triggering ticker.info (heavy, 10+ requests, often 429s).
+            if ticker.endswith(".KA"):
+                psx_info = {
+                    **_empty_info,
+                    "name": MARKET_TICKERS["PSX"].get(ticker, ticker),
+                }
+                cache_set(f"stock:info:{cache_key}", psx_info, ttl=3600)
+                return psx_info
+
+            # Skip heavy stock.info call when Yahoo is rate-limited
+            if YAHOO_RATE_LIMITED and time.time() < YAHOO_RATE_LIMIT_UNTIL:
+                cache_set(f"stock:info:{cache_key}", _empty_info, ttl=180)
+                return _empty_info
 
             try:
                 import yfinance as yf
             except Exception:
-                return {
-                    "symbol": ticker.upper(),
-                    "name": None,
-                    "sector": None,
-                    "industry": None,
-                    "market_cap": None,
-                    "pe_ratio": None,
-                    "dividend_yield": None,
-                    "fifty_two_week_high": None,
-                    "fifty_two_week_low": None,
-                    "description": None,
-                    "website": None
-                }
+                return _empty_info
 
             stock = yf.Ticker(ticker)
-            info = stock.info
+            try:
+                info = stock.info
+            except Exception as e:
+                if "429" in str(e):
+                    YAHOO_RATE_LIMITED = True
+                    YAHOO_RATE_LIMIT_UNTIL = time.time() + 300
+                cache_set(f"stock:info:{cache_key}", _empty_info, ttl=180)
+                return _empty_info
             
             if not info or 'symbol' not in info and 'longName' not in info:
-                return {
-                    "symbol": ticker.upper(),
-                    "name": None,
-                    "sector": None,
-                    "industry": None,
-                    "market_cap": None,
-                    "pe_ratio": None,
-                    "dividend_yield": None,
-                    "fifty_two_week_high": None,
-                    "fifty_two_week_low": None,
-                    "description": None,
-                    "website": None
-                }
+                return _empty_info
 
             payload = {
                 "symbol": info.get("symbol", ticker.upper()),
@@ -283,22 +492,10 @@ class StockService:
                 "description": info.get("longBusinessSummary"),
                 "website": info.get("website")
             }
-            INFO_CACHE[cache_key] = payload
+            cache_set(f"stock:info:{cache_key}", payload, ttl=3600)
             return payload
         except Exception:
-            return {
-                "symbol": ticker.upper(),
-                "name": None,
-                "sector": None,
-                "industry": None,
-                "market_cap": None,
-                "pe_ratio": None,
-                "dividend_yield": None,
-                "fifty_two_week_high": None,
-                "fifty_two_week_low": None,
-                "description": None,
-                "website": None
-            }
+            return _empty_info
 
     @staticmethod
     def get_financials(ticker: str) -> Dict[str, Any]:
@@ -379,44 +576,57 @@ class StockService:
 
     @staticmethod
     def _fetch_market_item(ticker: str, name: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single market item with rate-limit awareness."""
+        global YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
+
+        # PSX tickers use the resilient safe fetcher
+        if ticker.endswith(".KA"):
+            result = get_psx_stock_safe(ticker)
+            if result and result.get("price") is not None:
+                return {
+                    "symbol": ticker,
+                    "name": name,
+                    "price": result["price"],
+                    "change": result.get("change", 0.0),
+                    "change_percent": result.get("change_percent", 0.0),
+                    "volume": result.get("volume", 0),
+                    "is_cached": result.get("is_cached", False),
+                    "source": result.get("source", "unknown"),
+                }
+            return None
+
+        # Non-PSX: check rate limit then use yfinance normally
+        if YAHOO_RATE_LIMITED and time.time() < YAHOO_RATE_LIMIT_UNTIL:
+            return None
+
         try:
             import yfinance as yf
-        except Exception as exc:
-            logger.warning("yfinance unavailable for %s: %s", ticker, exc)
+        except Exception:
             return None
 
         try:
             stock = yf.Ticker(ticker)
-            fast_info = getattr(stock, "fast_info", None)
-            price = None
-            prev_close = None
-            volume = None
-
-            if fast_info:
-                try:
-                    info = stock.fast_info
-                    price = info.get("last_price") or info.get("last")
-                    prev_close = info.get("previous_close") or info.get("previousClose")
-                    volume = info.get("volume")
-                except Exception:
-                    price = None
-
+            fi = stock.fast_info
+            price = getattr(fi, "last_price", None)
             if price is None:
                 return None
 
-            change = float(price) - float(prev_close) if prev_close else 0.0
-            change_percent = (change / float(prev_close)) * 100 if prev_close else 0.0
-
+            prev = getattr(fi, "previous_close", None) or price
+            change = float(price) - float(prev)
+            pct = (change / float(prev) * 100) if prev else 0.0
             return {
                 "symbol": ticker,
                 "name": name,
-                "price": round(float(price), 4),
-                "change": round(float(change), 4),
-                "change_percent": round(float(change_percent), 2),
-                "volume": int(volume) if volume is not None else None,
+                "price": round(float(price), 2),
+                "change": round(change, 2),
+                "change_percent": round(pct, 2),
+                "volume": 0,
             }
         except Exception as exc:
-            logger.warning("Failed to fetch %s: %s", ticker, exc)
+            if "429" in str(exc):
+                YAHOO_RATE_LIMITED = True
+                YAHOO_RATE_LIMIT_UNTIL = time.time() + 300
+                logger.warning("Yahoo 429 on %s — global cooldown 5 min", ticker)
             return None
 
     @staticmethod
@@ -424,7 +634,13 @@ class StockService:
     def _cached_market_overview(ttl_bucket: int) -> Dict[str, List[Dict[str, Any]]]:
         results: Dict[str, List[Dict[str, Any]]] = {k: [] for k in MARKET_TICKERS.keys()}
 
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        # Skip entirely when Yahoo is rate-limited
+        if YAHOO_RATE_LIMITED and time.time() < YAHOO_RATE_LIMIT_UNTIL:
+            logger.info("Market overview skipped — Yahoo rate-limited")
+            return results
+
+        # Limit to 2 concurrent workers to reduce Yahoo pressure
+        with ThreadPoolExecutor(max_workers=2) as executor:
             future_map = {}
             for category, tickers in MARKET_TICKERS.items():
                 for symbol, name in tickers.items():
@@ -444,13 +660,13 @@ class StockService:
 
     @staticmethod
     def get_market_overview() -> Dict[str, List[Dict[str, Any]]]:
-        cached = MARKET_CACHE.get("overview")
+        cached = cache_get("market:overview")
         if cached is not None:
             return cached
 
-        ttl_bucket = int(time.time() // 60)
+        ttl_bucket = int(time.time() // 300)  # 5-minute buckets
         data = StockService._cached_market_overview(ttl_bucket)
-        MARKET_CACHE["overview"] = data
+        cache_set("market:overview", data, ttl=300)  # cache 5 min
         return data
 
     @staticmethod
@@ -461,7 +677,7 @@ class StockService:
     @staticmethod
     def search_autocomplete(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         cache_key = query.strip().lower()
-        cached = AUTOCOMPLETE_CACHE.get(cache_key)
+        cached = cache_get(f"stock:autocomplete:{cache_key}")
         if cached is not None:
             return cached
 
@@ -473,7 +689,7 @@ class StockService:
             if normalized in symbol.lower() or normalized in name.lower():
                 results.append({"symbol": symbol, "name": name, "market": "PSX"})
                 if len(results) >= limit:
-                    AUTOCOMPLETE_CACHE[cache_key] = results
+                    cache_set(f"stock:autocomplete:{cache_key}", results, ttl=300)
                     return results
 
         # yfinance search fallback
@@ -493,5 +709,5 @@ class StockService:
         except Exception as exc:
             logger.warning("Autocomplete fallback failed: %s", exc)
 
-        AUTOCOMPLETE_CACHE[cache_key] = results[:limit]
+        cache_set(f"stock:autocomplete:{cache_key}", results[:limit], ttl=300)
         return results[:limit]

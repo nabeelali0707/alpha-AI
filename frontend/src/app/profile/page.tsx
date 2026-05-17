@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthProvider';
 import { useToast } from '../../components/Toast';
 
 export default function ProfilePage() {
-  const { user, profile, logout, updateProfile } = useAuth();
+  const { user, session, profile, logout, updateProfile, loading } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
 
@@ -55,18 +56,42 @@ export default function ProfilePage() {
     ? new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
     : '—';
 
+  if (loading) {
+    return (
+      <div className="container page-enter" style={{ paddingTop: 48, paddingBottom: 64, textAlign: 'center', color: 'var(--text-secondary)' }}>
+        Checking authentication...
+      </div>
+    );
+  }
+
+  if (!user || !session) {
+    return (
+      <div className="container page-enter" style={{ paddingTop: 48, paddingBottom: 64 }}>
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
+          <div className="glass" style={{ padding: 32, borderRadius: 'var(--radius-xl)', textAlign: 'center' }}>
+            <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 10 }}>Profile Locked</h1>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: 18 }}>Please sign in to view and edit your profile.</p>
+            <Link href="/auth/login?redirectTo=/profile" style={{ display: 'inline-block', padding: '10px 20px', borderRadius: 10, background: 'var(--accent-blue)', color: 'white', textDecoration: 'none', fontWeight: 600 }}>
+              Go to Login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container" style={{ paddingTop: 48, paddingBottom: 64 }}>
+    <div className="container page-enter" style={{ paddingTop: 48, paddingBottom: 64 }}>
       <div style={{ maxWidth: 680, margin: '0 auto' }}>
         {/* Header */}
-        <div style={{ marginBottom: 32 }}>
+        <div className="animate-fadeInDown" style={{ marginBottom: 32 }}>
           <span style={{ color: 'var(--accent-green)', fontSize: 11, letterSpacing: '0.25em', textTransform: 'uppercase', fontWeight: 600 }}>◈ OPERATOR PROFILE</span>
           <h1 style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-headline)', marginTop: 6 }}>Account Settings</h1>
         </div>
 
         {/* Avatar + Info Card */}
-        <div className="glass" style={{ padding: 32, borderRadius: 'var(--radius-xl)', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 28 }}>
+        <div className="glass hover-glow animate-fadeInUp delay-200" style={{ padding: 32, borderRadius: 'var(--radius-xl)', marginBottom: 20 }}>
+          <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-6 mb-7">
             {profile?.avatar_url ? (
               <img src={profile.avatar_url} alt="Avatar" style={{ width: 72, height: 72, borderRadius: '50%', border: '2px solid var(--accent-green)', objectFit: 'cover' }} />
             ) : (
@@ -108,7 +133,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Stats */}
-        <div className="glass" style={{ padding: 24, borderRadius: 'var(--radius-xl)', marginBottom: 20, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, textAlign: 'center' }}>
+        <div className="glass hover-glow animate-fadeInUp delay-400 grid grid-cols-1 sm:grid-cols-3 gap-6 text-center" style={{ padding: 24, borderRadius: 'var(--radius-xl)', marginBottom: 20 }}>
           {[
             { label: 'Account Status', value: '✓ Active', color: 'var(--accent-green)' },
             { label: 'Auth Provider', value: user?.app_metadata?.provider || 'email', color: 'var(--accent-blue)' },
@@ -122,7 +147,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Logout */}
-        <div className="glass" style={{ padding: 24, borderRadius: 'var(--radius-xl)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="glass hover-glow animate-fadeInUp delay-600 flex flex-col sm:flex-row items-center sm:justify-between text-center sm:text-left gap-4" style={{ padding: 24, borderRadius: 'var(--radius-xl)' }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Sign Out</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Log out of your AlphaAI account</div>

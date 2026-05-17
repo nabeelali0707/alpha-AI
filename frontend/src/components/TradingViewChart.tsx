@@ -2,12 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import "./TradingViewChart.css";
-import { getCommodityMarket, getCryptoMarket, getForexMarket, getPSXStocks, getStockHistory, type MarketItem } from "@/lib/api";
-
-interface ChartData {
-  time: string;
-  price: number;
-}
+import StockChart from "@/components/StockChart";
+import { getCommodityMarket, getCryptoHistory, getCryptoMarket, getForexHistory, getForexMarket, getPSXStocks, getStockHistory, type MarketItem, type StockHistoryEntry } from "@/lib/api";
 
 interface Asset {
   id: string;
@@ -43,8 +39,9 @@ function toAsset(item: MarketItem, type: Asset["type"], ticker = item.symbol): A
 export default function TradingViewChart() {
   const [watchlist, setWatchlist] = useState<Asset[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [chartHistory, setChartHistory] = useState<StockHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [filters, setFilters] = useState({
     searchTerm: "",
     assetType: "all" as const,
@@ -52,7 +49,8 @@ export default function TradingViewChart() {
 
   useEffect(() => {
     let mounted = true;
-    let completedRequests = 0;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const intervals: ReturnType<typeof setInterval>[] = [];
 
     function appendAssets(nextAssets: Asset[]) {
       setWatchlist((current) => {
@@ -82,31 +80,43 @@ export default function TradingViewChart() {
         if (!mounted) return;
         // eslint-disable-next-line no-console
         console.warn(`Failed to load ${type} market data`, error);
-      } finally {
-        completedRequests += 1;
-        if (mounted && completedRequests >= 4) {
-          setLoading(false);
-        }
       }
     }
 
-    async function loadMarkets() {
-      setLoading(true);
-      completedRequests = 0;
-      setWatchlist([]);
-      setSelectedAsset(null);
+    // Staggered market loading to avoid flooding Yahoo Finance
+    // Crypto:    starts immediately,    repeats every 60s
+    // Forex:     starts after 15s,      repeats every 120s
+    // Commodity: starts after 30s,      repeats every 120s
+    // PSX:       starts after 45s,      repeats every 90s
 
-      void loadGroup(getCryptoMarket, "crypto", (item) => `${item.symbol}-USD`);
+    setLoading(true);
+
+    // Crypto — immediate
+    void loadGroup(getCryptoMarket, "crypto", (item) => `${item.symbol}-USD`);
+    intervals.push(setInterval(() => void loadGroup(getCryptoMarket, "crypto", (item) => `${item.symbol}-USD`), 60000));
+
+    // Forex — delayed 15s
+    timers.push(setTimeout(() => {
       void loadGroup(getForexMarket, "forex");
-      void loadGroup(getCommodityMarket, "commodity");
-      void loadGroup(getPSXStocks, "stock");
-    }
+      intervals.push(setInterval(() => void loadGroup(getForexMarket, "forex"), 120000));
+    }, 15000));
 
-    loadMarkets();
-    const interval = setInterval(loadMarkets, 30000);
+    // Commodity — delayed 30s
+    timers.push(setTimeout(() => {
+      void loadGroup(getCommodityMarket, "commodity");
+      intervals.push(setInterval(() => void loadGroup(getCommodityMarket, "commodity"), 120000));
+    }, 30000));
+
+    // PSX — delayed 45s
+    timers.push(setTimeout(() => {
+      void loadGroup(getPSXStocks, "stock");
+      intervals.push(setInterval(() => void loadGroup(getPSXStocks, "stock"), 90000));
+    }, 45000));
+
     return () => {
       mounted = false;
-      clearInterval(interval);
+      timers.forEach(clearTimeout);
+      intervals.forEach(clearInterval);
     };
   }, []);
 
@@ -115,27 +125,25 @@ export default function TradingViewChart() {
 
     async function loadHistory() {
       if (!selectedAsset) {
-        setChartData([]);
-        return;
-      }
-
-      if (selectedAsset.type === "crypto" || selectedAsset.type === "forex") {
-        setChartData([]);
+        setChartHistory([]);
         return;
       }
 
       try {
-        const history = await getStockHistory(selectedAsset.ticker, "1mo", "1d");
-        const series = history.slice(-30).map((entry) => ({
-          time: new Date(entry.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-          price: entry.close,
-        }));
-        if (mounted) setChartData(series);
+        setHistoryLoading(true);
+        const history = selectedAsset.type === "crypto"
+          ? await getCryptoHistory(selectedAsset.symbol, 30)
+          : selectedAsset.type === "forex"
+            ? await getForexHistory(selectedAsset.symbol, 30)
+            : await getStockHistory(selectedAsset.ticker, "1mo", "1d");
+        if (mounted) setChartHistory(history);
       } catch (error) {
         if (!mounted) return;
         // eslint-disable-next-line no-console
         console.warn("Live chart history unavailable", error);
-        setChartData([]);
+        setChartHistory([]);
+      } finally {
+        if (mounted) setHistoryLoading(false);
       }
     }
 
@@ -155,26 +163,8 @@ export default function TradingViewChart() {
     });
   }, [watchlist, filters.searchTerm, filters.assetType]);
 
-  const chartPolyline = useMemo(() => {
-    if (!chartData.length) return "";
-
-    const prices = chartData.map((point) => point.price);
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    const range = max - min || 1;
-    const count = Math.max(chartData.length - 1, 1);
-
-    return chartData
-      .map((point, index) => {
-        const x = (index / count) * 100;
-        const y = 90 - ((point.price - min) / range) * 70;
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      })
-      .join(" ");
-  }, [chartData]);
-
   return (
-    <div className="trading-view">
+    <div className="trading-view page-enter">
       <div className="tv-container">
         <div className="sidebar">
           <div className="sidebar-header">
@@ -212,7 +202,7 @@ export default function TradingViewChart() {
               filteredWatchlist.map((asset) => (
                 <div
                   key={asset.id}
-                  className={`watchlist-item ${selectedAsset?.id === asset.id ? "active" : ""}`}
+                  className={`watchlist-item hover-scale ${selectedAsset?.id === asset.id ? "active" : ""}`}
                   onClick={() => setSelectedAsset(asset)}
                 >
                   <div className="item-icon">
@@ -237,7 +227,7 @@ export default function TradingViewChart() {
           </div>
         </div>
 
-        <div className="chart-area">
+        <div className="chart-area animate-fadeInLeft delay-200">
           {selectedAsset ? (
             <>
               <div className="chart-header">
@@ -274,18 +264,25 @@ export default function TradingViewChart() {
               </div>
 
               <div className="chart-container">
-                <div className="chart-placeholder">
-                  <svg viewBox="0 0 100 100" className="chart-svg">
-                    <defs>
-                      <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#00d4ff" />
-                        <stop offset="100%" stopColor="#7c3aed" />
-                      </linearGradient>
-                    </defs>
-                    {chartPolyline ? <polyline fill="none" stroke="url(#gradient)" strokeWidth="2" points={chartPolyline} /> : null}
-                  </svg>
-                  <div className="chart-text">{chartData.length ? "Live history from backend" : "Live history unavailable"}</div>
-                </div>
+                {historyLoading ? (
+                  <div className="chart-placeholder">
+                    <div className="chart-text">Loading chart data...</div>
+                  </div>
+                ) : chartHistory.length ? (
+                  <StockChart
+                    ticker={selectedAsset.type === "stock" ? selectedAsset.ticker : undefined}
+                    data={chartHistory}
+                    height={420}
+                    showControls={selectedAsset.type === "stock"}
+                  />
+                ) : (
+                  <div className="chart-placeholder">
+                    <div className="chart-text" style={{ color: "#ff3131", marginBottom: 8 }}>API Rate Limit Reached</div>
+                    <div style={{ fontSize: 13, color: "#9ca3af", maxWidth: 300, textAlign: "center" }}>
+                      Market data provider is currently rate limiting our requests. Chart history will resume automatically.
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="timeframes">
@@ -296,7 +293,7 @@ export default function TradingViewChart() {
                 ))}
               </div>
 
-              <div className="statistics">
+              <div className="statistics animate-slideUp delay-300">
                 <div className="stat-box">
                   <span className="stat-label">High 24h</span>
                   <span className="stat-value">{priceText({ ...selectedAsset, price: selectedAsset.price * 1.05 })}</span>
@@ -315,10 +312,10 @@ export default function TradingViewChart() {
                 </div>
               </div>
 
-              <div className="trade-actions">
-                <button className="btn btn-buy">🟢 Buy {selectedAsset.symbol}</button>
-                <button className="btn btn-sell">🔴 Sell {selectedAsset.symbol}</button>
-                <button className="btn btn-alert">🔔 Set Price Alert</button>
+              <div className="trade-actions animate-slideUp delay-400">
+                <button className="btn btn-buy hover-scale hover-glow">🟢 Buy {selectedAsset.symbol}</button>
+                <button className="btn btn-sell hover-scale hover-glow">🔴 Sell {selectedAsset.symbol}</button>
+                <button className="btn btn-alert hover-scale hover-glow">🔔 Set Price Alert</button>
               </div>
             </>
           ) : (

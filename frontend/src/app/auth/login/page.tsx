@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { Suspense, useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../../../context/AuthProvider';
 import { useToast } from '../../../components/Toast';
 
-export default function LoginPage() {
-  const { login, loginWithGoogle, loginWithGitHub } = useAuth();
+function LoginForm() {
+  const { login, loginWithGoogle, loginWithGitHub, user, session, loading } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -16,9 +16,38 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (!loading && user && session) {
+      router.replace(redirectTo);
+    }
+  }, [user, session, loading, router, redirectTo]);
+
+  // Show loading screen while checking auth
+  if (loading) {
+    return (
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Checking authentication...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is logged in, don't show the form (redirect will happen)
+  if (user && session) {
+    return (
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Redirecting to dashboard...</div>
+        </div>
+      </div>
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -27,7 +56,7 @@ export default function LoginPage() {
       setError('Please fill in all fields.');
       return;
     }
-    setLoading(true);
+    setFormLoading(true);
     try {
       await login(email, password);
       showToast('Logged in successfully', 'success');
@@ -35,7 +64,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(err.message || 'Login failed. Check your credentials.');
     } finally {
-      setLoading(false);
+      setFormLoading(false);
     }
   }
 
@@ -56,10 +85,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+    <div className="page-enter" style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
       <div style={{ width: '100%', maxWidth: 420 }}>
         {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <div className="animate-fadeInDown" style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ color: 'var(--accent-green)', fontSize: 11, letterSpacing: '0.25em', textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>
             ◈ SECURE CONNECTION ESTABLISHED
           </div>
@@ -72,7 +101,7 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="glass" style={{ padding: 32, borderRadius: 'var(--radius-xl)' }}>
+        <div className="glass animate-scaleIn delay-200 hover-glow" style={{ padding: 32, borderRadius: 'var(--radius-xl)' }}>
           {/* OAuth Buttons */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 24 }}>
             <button
@@ -204,15 +233,15 @@ export default function LoginPage() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={formLoading}
               style={{
-                width: '100%', padding: '13px', background: loading ? 'rgba(59,130,246,0.5)' : 'var(--accent-blue)',
+                width: '100%', padding: '13px', background: formLoading ? 'rgba(59,130,246,0.5)' : 'var(--accent-blue)',
                 color: 'white', border: 'none', borderRadius: 10, fontSize: 15,
-                fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: 600, cursor: formLoading ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}
             >
-              {loading ? (
+              {formLoading ? (
                 <>
                   <span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />
                   Authenticating…
@@ -234,5 +263,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

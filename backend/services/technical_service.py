@@ -4,7 +4,7 @@ Calculates RSI, Moving Averages, MACD, and Volatility using pandas/numpy.
 """
 
 import logging
-from functools import lru_cache
+from cachetools import TTLCache
 from typing import Any, Dict
 
 import numpy as np
@@ -13,10 +13,15 @@ from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
+_history_cache = TTLCache(maxsize=64, ttl=300)
 
-@lru_cache(maxsize=64)
+
 def _cached_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
     """Cache historical price frames for repeated technical analysis requests."""
+    key = f"{ticker}:{period}:{interval}"
+    if key in _history_cache:
+        return _history_cache[key]
+
     try:
         import yfinance as yf
     except Exception as e:
@@ -26,6 +31,7 @@ def _cached_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
     df = stock.history(period=period, interval=interval)
     if df.empty:
         raise ValueError(f"No historical data found for {ticker}")
+    _history_cache[key] = df
     return df
 
 

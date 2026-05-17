@@ -20,10 +20,12 @@ requests>=2.31.0
 beautifulsoup4>=4.12.0
 # newsapi-python (Conflicts with requests)
 httpx>=0.27.0
+openai>=1.40.0
 cachetools>=5.0.0
 # coingecko-api (Conflicts with requests)
 aiohttp>=3.9.0
 supabase>=2.6.0
+redis>=5.0.0
 
 # Utilities
 python-dotenv>=1.0.0

@@ -1,23 +1,54 @@
 'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useState, FormEvent, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthProvider';
 import { useToast } from '../../../components/Toast';
 
 export default function ForgotPasswordPage() {
-  const { resetPassword } = useAuth();
+  const { resetPassword, user, session, loading: authLoading } = useAuth();
   const { showToast } = useToast();
+  const router = useRouter();
   const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (!authLoading && user && session) {
+      router.replace('/dashboard');
+    }
+  }, [user, session, authLoading, router]);
+
+  // Show loading screen while checking auth
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Checking authentication...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // If user is logged in, don't show the form
+  if (user && session) {
+    return (
+      <div style={{ minHeight: '88vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Redirecting to dashboard...</div>
+        </div>
+      </div>
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
     if (!email) return setError('Please enter your email address.');
-    setLoading(true);
+    setFormLoading(true);
     try {
       await resetPassword(email);
       setSent(true);
@@ -25,7 +56,7 @@ export default function ForgotPasswordPage() {
     } catch (err: any) {
       setError(err.message || 'Failed to send reset email. Please try again.');
     } finally {
-      setLoading(false);
+      setFormLoading(false);
     }
   }
 
@@ -63,8 +94,8 @@ export default function ForgotPasswordPage() {
                 <div style={{ padding: '10px 14px', background: 'rgba(255,49,49,0.1)', border: '1px solid rgba(255,49,49,0.3)', borderRadius: 8, fontSize: 13, color: '#ff6b6b' }}>{error}</div>
               )}
 
-              <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, background: loading ? 'rgba(59,130,246,0.4)' : 'var(--accent-blue)', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                {loading ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />Sending…</> : 'Send Reset Link'}
+              <button type="submit" disabled={formLoading} style={{ width: '100%', padding: 13, background: formLoading ? 'rgba(59,130,246,0.4)' : 'var(--accent-blue)', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: formLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                {formLoading ? <><span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} />Sending…</> : 'Send Reset Link'}
               </button>
 
               <div style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-secondary)' }}>

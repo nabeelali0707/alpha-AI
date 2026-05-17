@@ -288,7 +288,15 @@ export default function StockChart({
       )}
 
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          {chartData.length === 0 && (
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 22, 41, 0.8)", zIndex: 10, borderRadius: 8, flexDirection: "column" }}>
+              <div style={{ color: "#ff3131", fontWeight: 600, marginBottom: 8 }}>Chart Data Unavailable</div>
+              <div style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", maxWidth: 300 }}>
+                Data provider is rate-limiting requests. The chart will update automatically when the rate limit resets.
+              </div>
+            </div>
+          )}
           <div ref={containerRef} style={{ width: "100%", height }} />
         </div>
 

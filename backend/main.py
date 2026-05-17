@@ -18,7 +18,7 @@ from utils.config import settings
 from utils.error_handlers import register_error_handlers
 from utils.limiter import limiter
 from models.stock import SimpleStockSummary
-from routes import analysis, auth, portfolio, stocks, search, live
+from routes import analysis, auth, portfolio, stocks, search, live, alerts, ai_features, chat, market_brief, events
 from routes import ws_live
 
 # ── Logging Setup ───────────────────────────────────────────────────────────
@@ -36,11 +36,16 @@ async def lifespan(app: FastAPI):
     """Manage background tasks tied to the application lifecycle."""
     logger.info("🚀 Starting WebSocket price broadcaster…")
     broadcaster_task = asyncio.create_task(ws_live.price_broadcaster())
+    logger.info("🚀 Starting price event detector…")
+    event_task = asyncio.create_task(events.detect_price_events_loop())
     yield
     logger.info("🛑 Shutting down WebSocket price broadcaster…")
     broadcaster_task.cancel()
+    logger.info("🛑 Shutting down price event detector…")
+    event_task.cancel()
     try:
         await broadcaster_task
+        await event_task
     except asyncio.CancelledError:
         logger.info("Price broadcaster cancelled cleanly")
 
@@ -111,7 +116,7 @@ register_error_handlers(app)
 )
 async def health_check():
     return {
-        "status": "operational",
+        "status": "ok",
         "version": settings.app_version,
         "app": settings.app_name,
     }
@@ -125,6 +130,11 @@ app.include_router(portfolio.router, prefix="/api/v1/portfolio", tags=["Portfoli
 app.include_router(search.router, prefix="/api/v1/search", tags=["Search"])
 app.include_router(live.router, prefix="/api/v1", tags=["Live Markets"])
 app.include_router(ws_live.router, prefix="/api/v1/ws", tags=["WebSocket"])
+app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
+app.include_router(market_brief.router, prefix="/api/v1", tags=["Market"])
+app.include_router(events.router, prefix="/api/v1", tags=["Events"])
+app.include_router(alerts.router, prefix="/api/v1", tags=["Alerts"])
+app.include_router(ai_features.router, prefix="/api/v1/ai", tags=["AI Features"])
 
 # ── Root ────────────────────────────────────────────────────────────────────
 @app.get("/", tags=["System"], include_in_schema=False)
@@ -144,6 +154,11 @@ async def root():
     description="Fetch the current price, company name, market cap, and volume for a ticker using yfinance.",
 )
 async def get_simple_stock(ticker: str):
+    from services.stock_service import YAHOO_RATE_LIMITED, YAHOO_RATE_LIMIT_UNTIL
+
+    if YAHOO_RATE_LIMITED and __import__("time").time() < YAHOO_RATE_LIMIT_UNTIL:
+        raise HTTPException(status_code=503, detail="Yahoo Finance rate-limited — try again in a few minutes")
+
     try:
         import yfinance as yf
     except Exception as exc:
@@ -157,24 +172,12 @@ async def get_simple_stock(ticker: str):
     volume = None
 
     # Prefer fast_info where possible because it's usually lighter than full stock.info.
-    fast_info = getattr(stock, "fast_info", None)
-    if fast_info:
-        try:
-            price = fast_info.get("last_price") or fast_info.get("last")
-            volume = fast_info.get("volume") or volume
-        except Exception:
-            pass
-
-    if price is None:
-        try:
-            info = stock.info or {}
-        except Exception:
-            info = {}
-
-        price = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
-        company_name = info.get("longName") or info.get("shortName")
-        market_cap = info.get("marketCap")
-        volume = info.get("volume") or info.get("regularMarketVolume")
+    try:
+        fi = stock.fast_info
+        price = getattr(fi, "last_price", None)
+        volume = getattr(fi, "volume", None) or volume
+    except Exception:
+        pass
 
     if price is None:
         try:
@@ -183,12 +186,7 @@ async def get_simple_stock(ticker: str):
                 price = hist["Close"].iloc[-1]
                 volume = int(hist["Volume"].iloc[-1]) if volume is None else volume
         except Exception:
-            hist = None
-    else:
-        try:
-            hist = stock.history(period="5d", interval="1d")
-        except Exception:
-            hist = None
+            pass
 
     if price is None:
         raise HTTPException(status_code=404, detail=f"No stock data available for ticker {ticker}")

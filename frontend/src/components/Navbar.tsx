@@ -8,10 +8,15 @@ import { useAuth } from '../context/AuthProvider';
 
 function getMarketStatus() {
   const now = new Date();
-  const t = now.getHours() * 60 + now.getMinutes();
-  if (t >= 570 && t <= 960) return { label: 'NYSE OPEN', color: '#00ff41' };
-  if (t >= 555 && t <= 930) return { label: 'PSX OPEN', color: '#00ff41' };
-  return { label: 'MARKETS CLOSED', color: '#9ca3af' };
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const pktDate = new Date(utcMs + 5 * 60 * 60000);
+  const day = pktDate.getUTCDay();
+  const minutes = pktDate.getUTCHours() * 60 + pktDate.getUTCMinutes();
+  const isWeekday = day >= 1 && day <= 5;
+  const isOpen = isWeekday && minutes >= 570 && minutes < 930; // 09:30 to 15:30 PKT
+  return isOpen
+    ? { label: 'PSX OPEN', color: '#00ff41' }
+    : { label: 'PSX CLOSED', color: '#ff3131' };
 }
 
 export default function Navbar() {

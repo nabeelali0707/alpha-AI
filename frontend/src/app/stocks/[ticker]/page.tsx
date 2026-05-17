@@ -14,6 +14,7 @@ import StockSearchBar         from "@/components/StockSearchBar";
 import StockOverviewCard      from "@/components/StockOverviewCard";
 import StockChart             from "@/components/StockChart";
 import AIRecommendationCard   from "@/components/AIRecommendationCard";
+import StockVoiceAI           from "@/components/StockVoiceAI";
 import SentimentPanel         from "@/components/SentimentPanel";
 import MarketStats            from "@/components/MarketStats";
 import TechnicalIndicatorsPanel from "@/components/TechnicalIndicatorsPanel";
@@ -101,6 +102,11 @@ export default function StockDetailPage() {
 
   // Error state
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setDashboard(null);
+    setError("");
+  }, [ticker]);
 
   // Watchlist
   const [watched, setWatched] = useState(false);
@@ -301,6 +307,7 @@ export default function StockDetailPage() {
               />
             )}
             <AIRecommendationCard ticker={ticker} data={dashboard?.recommendation as any ?? null} loading={loadingDash} />
+            <StockVoiceAI ticker={ticker} dashboard={dashboard} autoSpeak={true} />
             <SentimentPanel data={sentiment} loading={loadingDash} />
           </div>
 
