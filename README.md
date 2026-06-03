@@ -5,100 +5,96 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776ab?style=flat&logo=python)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ed?style=flat&logo=docker)](https://docker.com)
 
-**Production-ready AI stock analyzer** with real-time data, risk metrics, Urdu localization, and PSX support.
+**AlphaAI** is a comprehensive, AI-driven stock market analysis platform built to empower investors with real-time data, advanced risk metrics, and intelligent recommendations. Designed with robust architecture and modern technologies, it supports global markets, including dedicated integration for the Pakistan Stock Exchange (PSX), alongside full Urdu localization.
 
 ---
 
-## 🌟 Features at a Glance
+## 🌟 Key Features
 
-✅ **Live Stock Data** — Real-time pricing, OHLCV history, fundamentals  
-✅ **AI Recommendations** — BUY/SELL/HOLD signals with confidence scores  
-✅ **Risk Analytics** — Sharpe Ratio, Beta, Max Drawdown  
-✅ **Technical Indicators** — RSI, MACD, Bollinger Bands, Volatility  
-✅ **Global Markets** — US stocks, PSX, crypto, forex, commodities, indices  
-✅ **Urdu Support** — Translated financial glossary + Urdu recommendations  
-✅ **Portfolio Tracking** — Secure holdings management with P&L  
-✅ **Docker Ready** — Production-grade containerized deployment  
+- **Real-Time Market Data** — Live pricing, OHLCV historical charts, and fundamental company data.
+- **AI-Powered Recommendations** — Automated BUY/SELL/HOLD signals backed by confidence scores and technical reasoning.
+- **Advanced Risk Analytics** — In-depth metrics including Sharpe Ratio, Beta, and Maximum Drawdown.
+- **Comprehensive Technical Indicators** — Built-in analysis using RSI, MACD, Bollinger Bands, and Volatility tracking.
+- **Global Market Coverage** — Support for US equities, PSX, cryptocurrencies, forex, commodities, and major indices.
+- **Urdu Localization** — Translated financial glossary and native Urdu support for AI recommendations.
+- **Portfolio Management** — Secure, authenticated portfolio tracking with real-time Profit & Loss (P&L) calculation.
+- **Enterprise-Ready Deployment** — Fully containerized with Docker for seamless production deployment.
 
 ---
 
-## 🚀 Quick Start (2 Minutes)
+## 🚀 Quick Start
+
+Get AlphaAI up and running locally in just a few minutes.
 
 ### Prerequisites
-```
-Python 3.11+  |  Node.js 18+  |  Git
-```
+- Python 3.11+
+- Node.js 18+
+- Git
+- Docker (optional, for containerized setup)
 
-### Development Setup
+### Local Development Setup
 
-```bash
-# 1. Clone & navigate
-git clone https://github.com/your-org/alphaai.git
-cd alphaai
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/alphaai.git
+   cd alphaai
+   ```
 
-# 2. Backend
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8001
+2. **Start the Backend:**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   uvicorn main:app --reload --port 8001
+   ```
 
-# 3. Frontend (in new terminal)
-cd frontend
-npm install
-npm run dev
-```
+3. **Start the Frontend (in a new terminal):**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
 
-**Access:**
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8001
-- API Docs: http://localhost:8001/docs
+**Access Points:**
+- **Frontend Dashboard:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:8001](http://localhost:8001)
+- **API Documentation (Swagger UI):** [http://localhost:8001/docs](http://localhost:8001/docs)
 
-### Docker Deployment
+### Docker Setup
 
+For a streamlined, containerized deployment:
 ```bash
 docker-compose up --build
-# Same ports as above
 ```
+*The services will be available on the same ports as the local setup.*
 
 ---
 
-## 📡 API Endpoints
+## 📡 Core API Endpoints
 
-### Stock Data
-```
-GET  /api/v1/stocks/{symbol}               # Current price
-GET  /api/v1/stocks/{symbol}/history       # OHLCV data
-GET  /api/v1/stocks/{symbol}/info          # Company fundamentals
-```
+The backend provides a comprehensive RESTful API for market data and analysis.
+
+### Market Data
+- `GET /api/v1/stocks/{symbol}` — Current ticker price
+- `GET /api/v1/stocks/{symbol}/history` — OHLCV historical data
+- `GET /api/v1/stocks/{symbol}/info` — Company fundamentals
 
 ### Analysis & AI
-```
-GET  /api/v1/analysis/technical/{symbol}   # Indicators + risk metrics
-GET  /api/v1/analysis/recommend/{symbol}   # AI recommendation (BUY/SELL/HOLD)
-GET  /api/v1/analysis/urdu/recommend/{symbol}  # Urdu explanation
-```
+- `GET /api/v1/analysis/technical/{symbol}` — Technical indicators & risk metrics
+- `GET /api/v1/analysis/recommend/{symbol}` — AI trading recommendations
+- `GET /api/v1/analysis/urdu/recommend/{symbol}` — Urdu-localized explanations
 
-### Markets
-```
-GET  /api/v1/stocks/market/overview        # All markets grouped
-GET  /api/v1/stocks/market/psx             # PSX tickers (15+)
-GET  /api/v1/stocks/market/crypto          # Top crypto (12)
-GET  /api/v1/stocks/market/forex           # Forex pairs (10+)
-```
+### Portfolio Management (Requires Auth)
+- `GET /api/v1/portfolio/holdings` — Retrieve user holdings
+- `POST /api/v1/portfolio/holdings` — Add a new holding
+- `GET /api/v1/portfolio/summary` — P&L summary
 
-### Portfolio (requires auth)
-```
-GET  /api/v1/portfolio/holdings            # User holdings
-POST /api/v1/portfolio/holdings            # Add holding
-GET  /api/v1/portfolio/summary             # P&L summary
-```
-
-**Full docs:** `http://localhost:8001/docs` (Swagger UI)
+*For the complete API reference, visit the interactive Swagger UI at `/docs`.*
 
 ---
 
-## 🇵🇰 Pakistan Stock Exchange (PSX)
+## 🇵🇰 Pakistan Stock Exchange (PSX) Integration
 
-Built-in support for 15+ major PSX companies:
+AlphaAI features built-in, dedicated support for major PSX companies, catering specifically to the Pakistani market.
 
 | Symbol | Company |
 |--------|---------|
@@ -106,31 +102,33 @@ Built-in support for 15+ major PSX companies:
 | HBL.KA | Habib Bank Limited |
 | MCB.KA | MCB Bank |
 | LUCK.KA | Lucky Cement |
-| OGDC.KA | Oil & Gas Dev Corp |
+| OGDC.KA | Oil & Gas Development Company |
 
-**Add PSX data:** Place CSV files in `backend/psx_data/`, then run:
+**Custom Data Ingestion:** To add additional PSX data, place your CSV files in `backend/psx_data/` and execute the ingestion script:
 ```bash
 python backend/scripts/psx_ingest.py
 ```
 
 ---
 
-## 🌐 Market Coverage
+## 🌐 Supported Markets
 
-| Category | Count | Examples |
+| Category | Coverage | Examples |
 |----------|-------|----------|
-| **PSX** | 15+ | ENGRO.KA, HBL.KA, MCB.KA |
-| **US Stocks** | 12+ | AAPL, MSFT, NVDA, TSLA |
-| **Crypto** | 12 | BTC-USD, ETH-USD, SOL-USD |
-| **Forex** | 10+ | USD/PKR, EUR/USD, GBP/USD |
-| **Commodities** | 8 | Gold, Oil, Natural Gas |
-| **Indices** | 8 | S&P 500, NASDAQ, Dow Jones |
+| **PSX** | 15+ Top Companies | ENGRO.KA, HBL.KA, MCB.KA |
+| **US Stocks** | Global Equities | AAPL, MSFT, NVDA, TSLA |
+| **Cryptocurrency**| Top Market Cap | BTC-USD, ETH-USD, SOL-USD |
+| **Forex** | Major Pairs | USD/PKR, EUR/USD, GBP/USD |
+| **Commodities** | Major Assets | Gold, Oil, Natural Gas |
+| **Indices** | Global Benchmarks | S&P 500, NASDAQ, Dow Jones |
 
 ---
 
-## 🤖 AI Features
+## 🤖 Intelligent Architecture
 
-### Recommendation Engine
+### AI Recommendation Engine
+Generates actionable insights combining multiple technical indicators into a unified confidence score.
+
 ```json
 {
   "symbol": "AAPL",
@@ -145,165 +143,78 @@ python backend/scripts/psx_ingest.py
 }
 ```
 
-### Technical Indicators
-- **RSI** — Overbought/oversold detection
-- **MACD** — Trend confirmation
-- **Moving Averages** — SMA-20/50/200, EMA-12/26
-- **Bollinger Bands** — Support/resistance levels
-- **Volatility** — Risk assessment
-
-### Risk Metrics
-- **Sharpe Ratio** — Risk-adjusted returns
-- **Beta** — Correlation with market
-- **Max Drawdown** — Historical downside
+### Risk & Performance Metrics
+- **Sharpe Ratio** for risk-adjusted return analysis.
+- **Beta** for measuring market correlation and volatility.
+- **Maximum Drawdown** for assessing historical downside risk.
 
 ---
 
-## 🌍 Tech Stack
+## 🌍 Technology Stack
 
-### Backend
-```
-FastAPI 0.111.0  |  Uvicorn  |  Python 3.11
-Pandas  |  NumPy  |  yfinance  |  HuggingFace Transformers
-Supabase (PostgreSQL)  |  SlowAPI (rate limiting)  |  cachetools
-```
+**Frontend Framework**
+- Next.js 16 (React 19)
+- TypeScript
+- Tailwind CSS & Recharts
+- Supabase Client
 
-### Frontend
-```
-Next.js 16.2.6  |  React 19  |  TypeScript
-Tailwind CSS  |  Recharts  |  Supabase JS Client
-```
+**Backend Infrastructure**
+- Python 3.11 with FastAPI
+- Pandas, NumPy, yfinance
+- HuggingFace Transformers
+- PostgreSQL (via Supabase)
 
-### DevOps
-```
-Docker & Docker Compose  |  PostgreSQL 15
-Uvicorn (backend)  |  Next.js dev/prod
-```
+**DevOps & Security**
+- Docker & Docker Compose
+- Supabase Auth (JWT)
+- Rate Limiting (SlowAPI)
+- Row-Level Security (RLS)
 
 ---
 
-## ⚙️ Environment Setup
+## ⚙️ Configuration
 
-### Backend (.env)
-```bash
+Configure your environment variables before starting the application:
+
+**Backend (`backend/.env`)**
+```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE=your-service-role-key
 SUPABASE_ANON_KEY=your-anon-key
 ```
 
-### Frontend (.env.local)
-```bash
+**Frontend (`frontend/.env.local`)**
+```env
 NEXT_PUBLIC_ALPHAAI_API_BASE_URL=http://localhost:8001/api/v1
 ```
 
 ---
 
-## 📊 Database Schema
+## 📚 Project Documentation
 
-Automatic schema migration on startup:
-- `profiles` — User profiles
-- `portfolio_holdings` — User stocks & P&L
-- `watchlist` — Favorite symbols
-- `psx_stocks` — PSX stock catalog
-- `alerts` — Price alerts (future)
-
----
-
-## 🔐 Security
-
-✅ Supabase Auth (JWT tokens)  
-✅ Rate limiting (10 req/min on dashboard)  
-✅ CORS protection  
-✅ Pydantic input validation  
-✅ Row-level security (RLS) on Supabase  
-
----
-
-## 📈 Performance
-
-| Component | Cache TTL | Typical Response |
-|-----------|-----------|-----------------|
-| Stock Price | 30 sec | ~50ms |
-| Historical Data | 5 min | ~100ms |
-| Indicators | 5 min | ~200ms |
-| Company Info | 1 hr | ~80ms |
-
----
-
-## 🐳 Production Deployment
-
-### Recommended Platforms
-
-**Backend:** Render, Railway, AWS EC2  
-**Frontend:** Vercel, Netlify  
-**Database:** Supabase (free PostgreSQL)  
-
-### Docker Compose (Self-Hosted)
-
-```bash
-docker-compose up -d
-
-# Access:
-# Frontend: http://localhost:3000
-# Backend: http://localhost:8001
-# Postgres: localhost:5432
-```
-
----
-
-## 📚 Documentation
-
-- **[SETUP.md](SETUP.md)** — Detailed setup guide
-- **[SAAD.md](SAAD.md)** — Development overview
-- **[backend/DRAGON.md](backend/DRAGON.md)** — Backend architecture
-- **[frontend/CLAUDE.md](frontend/CLAUDE.md)** — Frontend guide
+Detailed documentation on the architecture and development setup can be found in the following files:
+- [**SETUP.md**](SETUP.md) — Comprehensive environment and database setup guide
+- [**SAAD.md**](SAAD.md) — System Architecture and Design Document
+- [**backend/DRAGON.md**](backend/DRAGON.md) — Backend services and AI engine details
+- [**frontend/CLAUDE.md**](frontend/CLAUDE.md) — Frontend component and state management guide
 
 ---
 
 ## 🤝 Contributing
 
+Contributions are welcome! If you'd like to improve AlphaAI, please follow these steps:
 1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing`
-3. Commit: `git commit -m 'Add amazing feature'`
-4. Push: `git push origin feature/amazing`
-5. Open Pull Request
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ---
 
 ## 📄 License
 
-MIT License — See [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 📞 Support
-
-- **Issues:** GitHub Issues
-- **Email:** support@alphaai.app
-- **Community:** [Discord](https://discord.gg/alphaai)
-
----
-
-**Version:** 1.0 | **Status:** Production-Ready MVP  
-**Made with ❤️ for Pakistani investors & global traders**
-
----
-
-## 🚀 Hackathon Checklist & Demo Walkthrough
-
-### 📋 Checklist
-- [x] **Supabase Setup**: `price_events` table configured with Row-Level Security.
-- [x] **Cyber-Terminal UI Gauge**: SVG-based semi-circle animated dial for dynamic sentiment categorization.
-- [x] **Daily Briefing Widget & Speech Synthesis**: Market narrative audio playback of AI-generated briefs.
-- [x] **Multi-Tab Terminal with Staggered Polling**: Rates and charts synced with staggered delays to mitigate 429 rate-limit floods.
-- [x] **Bespoke Portfolio Advisor Route**: Custom AI advisor POST route providing specific rebalancing insights.
-- [x] **SSE Streaming Assistant Terminals**: Streaming tokens direct from Groq / Gemini with clear fallback boundaries.
-
-### 🎭 Live Presentation Demo Script
-1. **Intro**: *"Welcome judges. This is AlphaAI, the ultimate cyber-terminal and risk analysis command center..."*
-2. **Dynamic Dashboard Overview**: Point to the daily briefing tape and click **LISTEN TO BRIEFING** to trigger natural SpeechSynthesis narration. Observe the interactive stock charts updating silently.
-3. **Sentiment Discovery**: Focus on the new **Fear & Greed Index Dial**. Watch the indicator needle rotate live and show the custom sentiment categorization.
-4. **Market Terminal Navigation**: Navigate to the **Markets** tab. Toggle between Interactive TradingView charts, Live Cryptocurrencies with green/red trend indicators, Forex pairs, and Index sentiment.
-5. **AI Streaming Assistant Command**: Open the **Assistant** panel. Click a quick prompt (e.g., *"Analyze AAPL for swing trade"*). Watch the response stream word-by-word via Server-Sent Events (SSE). Disable your API key to show the warning message!
-6. **Bespoke Portfolio Advisor**: Under **Portfolio**, ask the advisor for portfolio rebalancing strategies and see instant structured breakdown advice.
-
+*Developed with passion for open-source and intelligent financial technology.*
